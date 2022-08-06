@@ -9,3 +9,4 @@ edition = "2021"
 halo2_proofs = { version = "0.1.0-beta.1" }
 maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
 integer =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
+halo2wrong =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
