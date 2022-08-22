@@ -1,13 +1,16 @@
 use std::{marker::PhantomData, ops::Mul};
 
-use crate::{AssignedInteger, AssignedLimb, Fresh, Muled, RangeType, Regrouped, UnassignedInteger};
+use crate::{
+    AssignedInteger, AssignedLimb, BigIntInstructions, Fresh, Muled, RangeType, Regrouped,
+    UnassignedInteger,
+};
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 use maingate::{
     big_to_fe, compose, decompose_big, fe_to_big, modulus, AssignedValue, MainGate, MainGateConfig,
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
 };
 
-use num_bigint::{BigInt, BigUint};
+use num_bigint::BigUint;
 
 /// Configuration for [`BigIntegerChip`]
 #[derive(Clone, Debug)]
@@ -32,24 +35,25 @@ impl BigIntConfig {
 pub struct BigIntChip<F: FieldExt> {
     /// Chip configuration
     config: BigIntConfig,
+    out_width: usize,
+    num_limbs: usize,
     _f: PhantomData<F>,
 }
 
-impl<F: FieldExt> BigIntChip<F> {
-    const NUM_LOOKUP_LIMBS: usize = 8;
-    pub fn assign_integer(
+impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
+    fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: UnassignedInteger<F>,
-        word_max: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let range_gate = self.range_chip();
-        let word_width = Self::bits_size(&word_max);
+        let out_width = self.out_width;
         let num_limbs = integer.num_limbs();
+        assert_eq!(num_limbs, self.num_limbs);
         let values = (0..num_limbs)
             .map(|i| {
                 let limb = integer.limb(i);
-                range_gate.assign(ctx, limb, Self::sublimb_bit_len(word_width), word_width)
+                range_gate.assign(ctx, limb, Self::sublimb_bit_len(out_width), out_width)
             })
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
         let limbs = values
@@ -59,15 +63,15 @@ impl<F: FieldExt> BigIntChip<F> {
         Ok(self.new_assigned_integer(&limbs))
     }
 
-    pub fn assign_constant(
+    fn assign_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
-        word_max: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
-        let word_width = Self::bits_size(&word_max);
+        let out_width = self.out_width;
         let int_bits_size = Self::bits_size(&integer);
-        let num_limbs = int_bits_size / word_width;
+        let num_limbs = self.num_limbs;
+        assert_eq!(int_bits_size / out_width, num_limbs);
         let limbs = decompose_big::<F>(integer, num_limbs, int_bits_size);
         let main_gate = self.main_gate();
         let mut assigned_limbs: Vec<AssignedLimb<F, Fresh>> = Vec::with_capacity(num_limbs);
@@ -79,7 +83,7 @@ impl<F: FieldExt> BigIntChip<F> {
         Ok(AssignedInteger::new(&assigned_limbs))
     }
 
-    pub fn mul(
+    fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
@@ -110,14 +114,14 @@ impl<F: FieldExt> BigIntChip<F> {
         Ok(c)
     }
 
-    pub fn modular_mul(
+    fn modular_mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
-        out_width: usize,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        let out_width = self.out_width;
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         assert_eq!(n1, n.num_limbs());
@@ -196,11 +200,7 @@ impl<F: FieldExt> BigIntChip<F> {
         let prod_int = AssignedInteger::new(&prod_limbs);
         let ab = self.mul(ctx, a, b)?;
         let qn = self.mul(ctx, &quotient_int, n)?;
-        let min_n = if n2 >= n1 { n1 } else { n2 };
         let n = n1 + n2;
-        let one = BigUint::from(1usize);
-        let max_word =
-            BigUint::from(min_n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
         let mut eq_a_limbs: Vec<AssignedLimb<F, Muled>> = Vec::with_capacity(n - 1);
         let mut eq_b_limbs: Vec<AssignedLimb<F, Muled>> = Vec::with_capacity(n - 1);
         let main_gate = self.main_gate();
@@ -216,11 +216,12 @@ impl<F: FieldExt> BigIntChip<F> {
         }
         let eq_a = AssignedInteger::new(&eq_a_limbs);
         let eq_b = AssignedInteger::new(&eq_b_limbs);
-        self.equal_when_carried_regroup(ctx, &eq_a, &eq_b, max_word, out_width, n - 1)?;
+        //self.equal_when_carried_regroup(ctx, &eq_a, &eq_b, max_word, out_width, n - 1)?;
+        self.assert_equal_muled(ctx, &eq_a, &eq_b, n1, n2)?;
         Ok(prod_int)
     }
 
-    pub fn equal_when_carried_regroup(
+    /*pub fn equal_when_carried_regroup(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Muled>,
@@ -280,19 +281,88 @@ impl<F: FieldExt> BigIntChip<F> {
             .collect::<Vec<AssignedLimb<F, Regrouped>>>();
         let out = self.new_assigned_integer(&limbs);
         Ok(out)
-    }
+    }*/
 
-    fn equal_when_carried(
+    fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        a: &AssignedInteger<F, Regrouped>,
-        b: &AssignedInteger<F, Regrouped>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let out_width = self.out_width;
+        let word_max = BigUint::from(1usize) << out_width;
+        let num_chunk = a.num_limbs();
+        assert_eq!(num_chunk, b.num_limbs());
+        self.assert_equal(ctx, a, b, word_max, out_width, num_chunk)
+    }
+
+    fn assert_equal_muled(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Muled>,
+        b: &AssignedInteger<F, Muled>,
+        n1: usize,
+        n2: usize,
+    ) -> Result<(), Error> {
+        let min_n = if n2 >= n1 { n1 } else { n2 };
+        let n = n1 + n2;
+        let max_word = Self::compute_mul_word_max(self.out_width, min_n);
+        self.assert_equal(ctx, a, b, max_word, self.out_width, n - 1)
+    }
+}
+
+impl<F: FieldExt> BigIntChip<F> {
+    const NUM_LOOKUP_LIMBS: usize = 8;
+
+    /// Create new ['BigIntChip'] with the configuration
+    pub fn new(config: BigIntConfig, out_width: usize, bits_len: usize) -> Self {
+        assert_eq!(bits_len % out_width, 0);
+        let num_limbs = bits_len / out_width;
+        let max_word = Self::compute_mul_word_max(out_width, num_limbs);
+        assert!(Self::bits_size(&max_word) <= F::NUM_BITS as usize);
+        BigIntChip {
+            config,
+            out_width,
+            num_limbs,
+            _f: PhantomData,
+        }
+    }
+
+    /// Getter for [`RangeChip`]
+    pub fn range_chip(&self) -> RangeChip<F> {
+        RangeChip::<F>::new(self.config.range_config.clone())
+    }
+
+    /// Getter for [`MainGate`]
+    pub fn main_gate(&self) -> MainGate<F> {
+        let main_gate_config = self.config.main_gate_config.clone();
+        MainGate::<F>::new(main_gate_config)
+    }
+
+    fn sublimb_bit_len(bit_len_limb: usize) -> usize {
+        assert!(bit_len_limb % Self::NUM_LOOKUP_LIMBS == 0);
+        bit_len_limb / Self::NUM_LOOKUP_LIMBS
+    }
+
+    /// Creates a new [`AssignedInteger`] from its limb representation
+    pub(crate) fn new_assigned_integer<T: RangeType>(
+        &self,
+        limbs: &[AssignedLimb<F, T>],
+    ) -> AssignedInteger<F, T> {
+        AssignedInteger::new(limbs)
+    }
+
+    fn assert_equal<T: RangeType>(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, T>,
+        b: &AssignedInteger<F, T>,
         word_max: BigUint,
         out_width: usize,
         num_chunk: usize,
     ) -> Result<(), Error> {
-        let word_max_width = Self::bits_size(&word_max);
-        let carry_bits = word_max_width + 1 - out_width;
+        let word_max_width = Self::bits_size(&(&word_max * 2u32));
+        let carry_bits = word_max_width - out_width;
         assert!(carry_bits % Self::NUM_LOOKUP_LIMBS == 0);
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
@@ -302,7 +372,7 @@ impl<F: FieldExt> BigIntChip<F> {
         let mut cs = Vec::with_capacity(num_chunk);
         carry.push(main_gate.assign_constant(ctx, F::zero())?);
         for i in 0..num_chunk {
-            let a_b = main_gate.add(ctx, &a.limb(i), &b.limb(i))?;
+            let a_b = main_gate.sub(ctx, &a.limb(i), &b.limb(i))?;
             let sum =
                 main_gate.add_with_constant(ctx, &a_b, &carry[i], big_to_fe(word_max.clone()))?;
             let (new_carry, c) = self.div_mod_main_gate(ctx, &sum, &out_base)?;
@@ -348,38 +418,10 @@ impl<F: FieldExt> BigIntChip<F> {
     fn bits_size(val: &BigUint) -> usize {
         val.bits() as usize
     }
-}
 
-impl<F: FieldExt> BigIntChip<F> {
-    /// Create new ['BigIntChip'] with the configuration
-    pub fn new(config: BigIntConfig) -> Self {
-        BigIntChip {
-            config,
-            _f: PhantomData,
-        }
-    }
-
-    /// Getter for [`RangeChip`]
-    pub fn range_chip(&self) -> RangeChip<F> {
-        RangeChip::<F>::new(self.config.range_config.clone())
-    }
-
-    /// Getter for [`MainGate`]
-    pub fn main_gate(&self) -> MainGate<F> {
-        let main_gate_config = self.config.main_gate_config.clone();
-        MainGate::<F>::new(main_gate_config)
-    }
-
-    fn sublimb_bit_len(bit_len_limb: usize) -> usize {
-        assert!(bit_len_limb % Self::NUM_LOOKUP_LIMBS == 0);
-        bit_len_limb / Self::NUM_LOOKUP_LIMBS
-    }
-
-    /// Creates a new [`AssignedInteger`] from its limb representation
-    pub(crate) fn new_assigned_integer<T: RangeType>(
-        &self,
-        limbs: &[AssignedLimb<F, T>],
-    ) -> AssignedInteger<F, T> {
-        AssignedInteger::new(limbs)
+    fn compute_mul_word_max(out_width: usize, min_n: usize) -> BigUint {
+        let one = BigUint::from(1usize);
+        let out_base = BigUint::from(1usize) << out_width;
+        BigUint::from(min_n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one)
     }
 }
