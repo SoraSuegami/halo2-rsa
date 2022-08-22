@@ -1,11 +1,12 @@
-mod pow_integer;
-mod rsa_signature;
-pub use pow_integer::*;
-pub use rsa_signature::*;
-
-use halo2_proofs::arithmetic::FieldExt;
-use integer::{rns::Integer, AssignedInteger};
-
+mod big_integer;
+//mod pow_integer;
+//mod rsa_signature;
+pub use big_integer::*;
+//pub use pow_integer::*;
+//pub use rsa_signature::*;
+//use halo2_proofs::arithmetic::FieldExt;
+//use integer::{rns::Integer, AssignedInteger};
+/*
 #[derive(Clone, Debug)]
 pub struct RSAPublicKey<
     W: FieldExt,
@@ -27,3 +28,4 @@ pub struct AssignedRSAPublicKey<
     pub n: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     pub e: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
+*/
