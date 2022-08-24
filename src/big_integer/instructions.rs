@@ -1,8 +1,6 @@
-use std::marker::PhantomData;
-
-use crate::{AssignedInteger, AssignedLimb, Fresh, Muled, RangeType, UnassignedInteger};
-use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
-use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RegionCtx};
+use crate::{AssignedInteger, Fresh, Muled, UnassignedInteger};
+use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
+use maingate::RegionCtx;
 use num_bigint::BigUint;
 
 pub trait BigIntInstructions<F: FieldExt> {

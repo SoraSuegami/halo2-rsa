@@ -6,7 +6,7 @@ pub use chip::*;
 pub use instructions::*;
 
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value};
-use maingate::AssignedValue;
+use maingate::{fe_to_big, AssignedValue};
 use num_bigint::BigUint;
 
 pub trait RangeType: Clone {}
@@ -19,9 +19,9 @@ impl RangeType for Fresh {}
 pub struct Muled {}
 impl RangeType for Muled {}
 
-#[derive(Debug, Clone)]
+/*#[derive(Debug, Clone)]
 pub struct Regrouped {}
-impl RangeType for Regrouped {}
+impl RangeType for Regrouped {}*/
 
 /// AssignedLimb is a limb of an non native integer
 #[derive(Debug, Clone)]
@@ -120,5 +120,26 @@ impl<F: FieldExt, T: RangeType> AssignedInteger<F, T> {
     /// Returns the number of assigned limbs
     pub fn num_limbs(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn to_big_uint(&self, width: usize) -> Value<BigUint> {
+        let num_limbs = self.num_limbs();
+        (1..num_limbs).fold(
+            self.limb(0).value().map(|f| fe_to_big(f.clone())),
+            |acc, i| {
+                acc + self
+                    .limb(i)
+                    .value()
+                    .map(|f| fe_to_big(f.clone()) << (width * i))
+            },
+        )
+    }
+
+    pub fn extend_limbs(&mut self, num_extend_limbs: usize, zero_value: AssignedValue<F>) {
+        let pre_num_limbs = self.num_limbs();
+        for _ in 0..num_extend_limbs {
+            self.0.push(AssignedLimb::from(zero_value.clone()));
+        }
+        assert_eq!(pre_num_limbs + num_extend_limbs, self.num_limbs());
     }
 }

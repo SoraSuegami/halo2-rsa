@@ -1,12 +1,11 @@
-use std::{marker::PhantomData, ops::Mul};
+use std::marker::PhantomData;
 
 use crate::{
-    AssignedInteger, AssignedLimb, BigIntInstructions, Fresh, Muled, RangeType, Regrouped,
-    UnassignedInteger,
+    AssignedInteger, AssignedLimb, BigIntInstructions, Fresh, Muled, RangeType, UnassignedInteger,
 };
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 use maingate::{
-    big_to_fe, compose, decompose_big, fe_to_big, modulus, AssignedValue, MainGate, MainGateConfig,
+    big_to_fe, decompose_big, fe_to_big, modulus, AssignedValue, MainGate, MainGateConfig,
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
 };
 
@@ -125,40 +124,10 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         assert_eq!(n1, n.num_limbs());
-        let (a_big, n_big) = (1..n1).fold(
-            (
-                a.limb(0)
-                    .value()
-                    .and_then(|f| Value::known(fe_to_big(f.clone()))),
-                n.limb(0)
-                    .value()
-                    .and_then(|f| Value::known(fe_to_big(f.clone()))),
-            ),
-            |(a_acc, n_acc), i| {
-                let pow2 = BigUint::from(2usize) << (out_width * i);
-                (
-                    a_acc
-                        + a.limb(i)
-                            .value()
-                            .and_then(|f| Value::known(fe_to_big(f.clone()) * &pow2)),
-                    n_acc
-                        + n.limb(i)
-                            .value()
-                            .and_then(|f| Value::known(fe_to_big(f.clone()) * &pow2)),
-                )
-            },
-        );
-        let b_big = (1..n2).fold(
-            b.limb(0)
-                .value()
-                .and_then(|f| Value::known(fe_to_big(f.clone()))),
-            |b_acc, i| {
-                let pow2 = BigUint::from(2usize) << (out_width * i);
-                b_acc
-                    + b.limb(i)
-                        .value()
-                        .and_then(|f| Value::known(fe_to_big(f.clone()) * pow2))
-            },
+        let (a_big, b_big, n_big) = (
+            a.to_big_uint(out_width),
+            b.to_big_uint(out_width),
+            n.to_big_uint(out_width),
         );
         let full_prod_big = a_big * b_big;
         let (mut q_big, mut prod_big) = full_prod_big
@@ -178,6 +147,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             prod_big = prod_big.map(|p| p >> out_width);
             prods.push(p.map(|b| big_to_fe::<F>(b)));
         }
+        prod_big.map(|b| assert_eq!(b, BigUint::default()));
+        q_big.map(|b| assert_eq!(b, BigUint::default()));
 
         let range_chip = self.range_chip();
         let quotient_assigns = quotients
@@ -340,7 +311,7 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     fn sublimb_bit_len(bit_len_limb: usize) -> usize {
-        assert!(bit_len_limb % Self::NUM_LOOKUP_LIMBS == 0);
+        //assert!(bit_len_limb % Self::NUM_LOOKUP_LIMBS == 0);
         bit_len_limb / Self::NUM_LOOKUP_LIMBS
     }
 
@@ -363,7 +334,6 @@ impl<F: FieldExt> BigIntChip<F> {
     ) -> Result<(), Error> {
         let word_max_width = Self::bits_size(&(&word_max * 2u32));
         let carry_bits = word_max_width - out_width;
-        assert!(carry_bits % Self::NUM_LOOKUP_LIMBS == 0);
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
         let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << out_width))?;
@@ -409,10 +379,25 @@ impl<F: FieldExt> BigIntChip<F> {
         n: &AssignedValue<F>,
     ) -> Result<(AssignedValue<F>, AssignedValue<F>), Error> {
         let main_gate = self.main_gate();
-        let q = main_gate.div_unsafe(ctx, a, n)?;
+        let (q_unassigned, a_mod_n_unassigned) = a
+            .value()
+            .zip(n.value())
+            .map(|(a, n)| {
+                let a_big = fe_to_big(a.clone());
+                let n_big = fe_to_big(n.clone());
+                let q_big = &a_big / &n_big;
+                let a_mod_n_big = &a_big % &n_big;
+                (big_to_fe::<F>(q_big), big_to_fe::<F>(a_mod_n_big))
+            })
+            .unzip();
+        let (q, a_mod_n) = (
+            main_gate.assign_value(ctx, q_unassigned)?,
+            main_gate.assign_value(ctx, a_mod_n_unassigned)?,
+        );
         let nq = main_gate.mul(ctx, n, &q)?;
-        let mod_a = main_gate.sub(ctx, a, &nq)?;
-        Ok((q, mod_a))
+        let a_sub_nq = main_gate.sub(ctx, a, &nq)?;
+        main_gate.assert_equal(ctx, &a_mod_n, &a_sub_nq)?;
+        Ok((q, a_mod_n))
     }
 
     fn bits_size(val: &BigUint) -> usize {
@@ -423,5 +408,166 @@ impl<F: FieldExt> BigIntChip<F> {
         let one = BigUint::from(1usize);
         let out_base = BigUint::from(1usize) << out_width;
         BigUint::from(min_n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use halo2wrong::halo2::{
+        circuit::SimpleFloorPlanner,
+        plonk::{Circuit, ConstraintSystem},
+    };
+
+    #[derive(Clone, Debug)]
+    struct TestBigIntCircuit<F: FieldExt> {
+        a: BigUint,
+        b: BigUint,
+        n: BigUint,
+        _f: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> TestBigIntCircuit<F> {
+        const OUT_WIDTH: usize = 64;
+        const BITS_LEN: usize = 2048;
+        fn bigint_chip(&self, config: BigIntConfig) -> BigIntChip<F> {
+            BigIntChip::new(config, Self::OUT_WIDTH, Self::BITS_LEN)
+        }
+
+        fn compute_range_lens() -> (Vec<usize>, Vec<usize>) {
+            let out_comp_bit_len = Self::OUT_WIDTH / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
+            let out_overflow_bit_len = Self::OUT_WIDTH % out_comp_bit_len;
+            let one = BigUint::from(1usize);
+            let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+            let n = Self::BITS_LEN / Self::OUT_WIDTH;
+            let mul_word_max =
+                BigUint::from(n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
+            let word_max_width = (&mul_word_max * 2u32).bits() as usize;
+            let carry_bits = word_max_width - Self::OUT_WIDTH;
+            let carry_comp_bit_len = carry_bits / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
+            let carry_overflow_bit_len = carry_bits % carry_comp_bit_len;
+            let composition_bit_lens = vec![out_comp_bit_len, carry_comp_bit_len];
+            let overflow_bit_lens = vec![out_overflow_bit_len, carry_overflow_bit_len];
+            (composition_bit_lens, overflow_bit_lens)
+        }
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestBigIntCircuit<F> {
+        type Config = BigIntConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            unimplemented!();
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            let (composition_bit_lens, overflow_bit_lens) = Self::compute_range_lens();
+            let range_config = RangeChip::<F>::configure(
+                meta,
+                &main_gate_config,
+                composition_bit_lens,
+                overflow_bit_lens,
+            );
+            BigIntConfig::new(range_config, main_gate_config)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ba = bigint_chip.mul(ctx, &b_assigned, &a_assigned)?;
+                    bigint_chip.assert_equal_muled(
+                        ctx,
+                        &ab,
+                        &ba,
+                        a_assigned.num_limbs(),
+                        b_assigned.num_limbs(),
+                    )?;
+                    let ab_mod_n =
+                        bigint_chip.modular_mul(ctx, &a_assigned, &b_assigned, &n_assigned)?;
+                    /*let ba_mod_n =
+                    bigint_chip.modular_mul(ctx, &b_assigned, &a_assigned, &n_assigned)?;*/
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_bigint_chip() {
+        use halo2wrong::halo2::dev::MockProver;
+        use num_bigint::RandomBits;
+        use rand::{thread_rng, Rng};
+        fn run<F: FieldExt>() {
+            let mut rng = thread_rng();
+            let bits_len = TestBigIntCircuit::<F>::BITS_LEN as u64;
+            let mut n = BigUint::default();
+            while n.bits() != bits_len {
+                n = rng.sample(RandomBits::new(bits_len));
+            }
+            let mut a = BigUint::default();
+            while a.bits() != bits_len {
+                a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+            }
+            let mut b = BigUint::default();
+            while b.bits() != bits_len {
+                b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+            }
+            println!("ab {}", (&a * &b).to_str_radix(16));
+            println!(
+                "size a {} b {} n {} ab {} q {}",
+                a.bits(),
+                b.bits(),
+                n.bits(),
+                (&a * &b).bits(),
+                (&a * &b / &n).bits(),
+            );
+            let circuit = TestBigIntCircuit::<F> {
+                a,
+                b,
+                n,
+                _f: PhantomData,
+            };
+
+            let public_inputs = vec![vec![]];
+            let k = 20;
+            let prover = match MockProver::run(k, &circuit, public_inputs) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
+
+        use halo2wrong::curves::bn256::Fq as BnFq;
+        use halo2wrong::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+        use halo2wrong::curves::secp256k1::Secp256k1Affine as Secp256k1;
+        for i in 0..10 {
+            run::<BnFq>();
+            run::<PastaFp>();
+            run::<PastaFq>();
+        }
     }
 }

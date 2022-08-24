@@ -9,3 +9,6 @@ edition = "2021"
 maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
 halo2wrong =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
 num-bigint = { version = "0.4", features = ["rand"] }
+
+[dev-dependencies]
+rand = "0.8.5"
