@@ -528,14 +528,8 @@ mod test {
             while n.bits() != bits_len {
                 n = rng.sample(RandomBits::new(bits_len));
             }
-            let mut a = BigUint::default();
-            while a.bits() != bits_len {
-                a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
-            }
-            let mut b = BigUint::default();
-            while b.bits() != bits_len {
-                b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
-            }
+            let a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+            let b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
             println!("ab {}", (&a * &b).to_str_radix(16));
             println!(
                 "size a {} b {} n {} ab {} q {}",
@@ -553,7 +547,7 @@ mod test {
             };
 
             let public_inputs = vec![vec![]];
-            let k = 20;
+            let k = 13;
             let prover = match MockProver::run(k, &circuit, public_inputs) {
                 Ok(prover) => prover,
                 Err(e) => panic!("{:#?}", e),
@@ -564,7 +558,7 @@ mod test {
         use halo2wrong::curves::bn256::Fq as BnFq;
         use halo2wrong::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
         use halo2wrong::curves::secp256k1::Secp256k1Affine as Secp256k1;
-        for i in 0..10 {
+        for _ in 0..10 {
             run::<BnFq>();
             run::<PastaFp>();
             run::<PastaFq>();
