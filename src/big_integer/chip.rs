@@ -192,68 +192,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         Ok(prod_int)
     }
 
-    /*pub fn equal_when_carried_regroup(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        a: &AssignedInteger<F, Muled>,
-        b: &AssignedInteger<F, Muled>,
-        word_max: BigUint,
-        out_width: usize,
-        num_chunk: usize,
-    ) -> Result<(), Error> {
-        let word_max_width = Self::bits_size(&word_max);
-        let carry_bits = word_max_width + 1 - out_width;
-        assert!(carry_bits % Self::NUM_LOOKUP_LIMBS == 0);
-        let chunks_per_group = ((F::NUM_BITS as usize) - carry_bits) / out_width;
-        let n_group = (num_chunk - 1) / chunks_per_group + 1;
-        let mut group_max = BigUint::default();
-        let one = BigUint::from(1usize);
-        for i in 0..chunks_per_group {
-            group_max += one.pow((out_width * i) as u32) * &word_max;
-        }
-        let a_regrouped = self.regroup(ctx, a, out_width, num_chunk, chunks_per_group)?;
-        let b_regrouped = self.regroup(ctx, b, out_width, num_chunk, chunks_per_group)?;
-        self.equal_when_carried(
-            ctx,
-            &a_regrouped,
-            &b_regrouped,
-            group_max,
-            out_width * chunks_per_group,
-            n_group,
-        )
-    }
-
-    fn regroup(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        a: &AssignedInteger<F, Muled>,
-        base_width: usize,
-        num_chunk: usize,
-        group_size: usize,
-    ) -> Result<AssignedInteger<F, Regrouped>, Error> {
-        let n_groups = (num_chunk - 1) / group_size + 1;
-        let main_gate = self.main_gate();
-        let mut out = Vec::with_capacity(n_groups);
-        for i in 0..n_groups {
-            let mut lc = main_gate.assign_constant(ctx, F::zero())?;
-            for j in 0..group_size {
-                if i * group_size + j >= num_chunk {
-                    break;
-                }
-                let two_pow =
-                    main_gate.assign_constant(ctx, F::from_u128(1 << (base_width * j)))?;
-                lc = main_gate.mul_add(ctx, &two_pow, &a.limb(i * group_size + j), &lc)?;
-            }
-            out.push(lc);
-        }
-        let limbs = out
-            .into_iter()
-            .map(|v| AssignedLimb::<_, Regrouped>::from(v))
-            .collect::<Vec<AssignedLimb<F, Regrouped>>>();
-        let out = self.new_assigned_integer(&limbs);
-        Ok(out)
-    }*/
-
     fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -308,11 +246,6 @@ impl<F: FieldExt> BigIntChip<F> {
     pub fn main_gate(&self) -> MainGate<F> {
         let main_gate_config = self.config.main_gate_config.clone();
         MainGate::<F>::new(main_gate_config)
-    }
-
-    fn sublimb_bit_len(bit_len_limb: usize) -> usize {
-        //assert!(bit_len_limb % Self::NUM_LOOKUP_LIMBS == 0);
-        bit_len_limb / Self::NUM_LOOKUP_LIMBS
     }
 
     /// Creates a new [`AssignedInteger`] from its limb representation
@@ -404,10 +337,51 @@ impl<F: FieldExt> BigIntChip<F> {
         val.bits() as usize
     }
 
+    fn sublimb_bit_len(bit_len_limb: usize) -> usize {
+        //assert!(bit_len_limb % Self::NUM_LOOKUP_LIMBS == 0);
+        let val = bit_len_limb / Self::NUM_LOOKUP_LIMBS;
+        if val == 0 {
+            1
+        } else {
+            val
+        }
+    }
+
     fn compute_mul_word_max(out_width: usize, min_n: usize) -> BigUint {
         let one = BigUint::from(1usize);
         let out_base = BigUint::from(1usize) << out_width;
         BigUint::from(min_n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one)
+    }
+
+    fn compute_range_lens(out_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
+        let out_comp_bit_len = out_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
+        let out_overflow_bit_len = out_width % out_comp_bit_len;
+        let one = BigUint::from(1usize);
+        let out_base = BigUint::from(1usize) << out_width;
+
+        let fresh_word_max_width = (2u32 * &out_base).bits() as usize;
+        let fresh_carry_bits = fresh_word_max_width - out_width;
+        let fresh_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(fresh_carry_bits);
+        let fresh_carry_overflow_bit_len = fresh_carry_bits % fresh_carry_comp_bit_len;
+
+        let mul_word_max =
+            BigUint::from(num_limbs) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
+        let mul_word_max_width = (&mul_word_max * 2u32).bits() as usize;
+        let mul_carry_bits = mul_word_max_width - out_width;
+        let mul_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(mul_carry_bits);
+        let mul_carry_overflow_bit_len = mul_carry_bits % mul_carry_comp_bit_len;
+
+        let composition_bit_lens = vec![
+            out_comp_bit_len,
+            fresh_carry_comp_bit_len,
+            mul_carry_comp_bit_len,
+        ];
+        let overflow_bit_lens = vec![
+            out_overflow_bit_len,
+            fresh_carry_overflow_bit_len,
+            mul_carry_overflow_bit_len,
+        ];
+        (composition_bit_lens, overflow_bit_lens)
     }
 }
 
@@ -433,23 +407,6 @@ mod test {
         fn bigint_chip(&self, config: BigIntConfig) -> BigIntChip<F> {
             BigIntChip::new(config, Self::OUT_WIDTH, Self::BITS_LEN)
         }
-
-        fn compute_range_lens() -> (Vec<usize>, Vec<usize>) {
-            let out_comp_bit_len = Self::OUT_WIDTH / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
-            let out_overflow_bit_len = Self::OUT_WIDTH % out_comp_bit_len;
-            let one = BigUint::from(1usize);
-            let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
-            let n = Self::BITS_LEN / Self::OUT_WIDTH;
-            let mul_word_max =
-                BigUint::from(n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
-            let word_max_width = (&mul_word_max * 2u32).bits() as usize;
-            let carry_bits = word_max_width - Self::OUT_WIDTH;
-            let carry_comp_bit_len = carry_bits / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
-            let carry_overflow_bit_len = carry_bits % carry_comp_bit_len;
-            let composition_bit_lens = vec![out_comp_bit_len, carry_comp_bit_len];
-            let overflow_bit_lens = vec![out_overflow_bit_len, carry_overflow_bit_len];
-            (composition_bit_lens, overflow_bit_lens)
-        }
     }
 
     impl<F: FieldExt> Circuit<F> for TestBigIntCircuit<F> {
@@ -462,7 +419,10 @@ mod test {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let main_gate_config = MainGate::<F>::configure(meta);
-            let (composition_bit_lens, overflow_bit_lens) = Self::compute_range_lens();
+            let (composition_bit_lens, overflow_bit_lens) = BigIntChip::<F>::compute_range_lens(
+                Self::OUT_WIDTH,
+                Self::BITS_LEN / Self::OUT_WIDTH,
+            );
             let range_config = RangeChip::<F>::configure(
                 meta,
                 &main_gate_config,
@@ -504,8 +464,9 @@ mod test {
                     )?;
                     let ab_mod_n =
                         bigint_chip.modular_mul(ctx, &a_assigned, &b_assigned, &n_assigned)?;
-                    /*let ba_mod_n =
-                    bigint_chip.modular_mul(ctx, &b_assigned, &a_assigned, &n_assigned)?;*/
+                    let ba_mod_n =
+                        bigint_chip.modular_mul(ctx, &b_assigned, &a_assigned, &n_assigned)?;
+                    bigint_chip.assert_equal_fresh(ctx, &ab_mod_n, &ba_mod_n)?;
                     Ok(())
                 },
             )?;
@@ -547,7 +508,7 @@ mod test {
             };
 
             let public_inputs = vec![vec![]];
-            let k = 13;
+            let k = 14;
             let prover = match MockProver::run(k, &circuit, public_inputs) {
                 Ok(prover) => prover,
                 Err(e) => panic!("{:#?}", e),
