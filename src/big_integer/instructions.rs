@@ -1,4 +1,4 @@
-use crate::{AssignedInteger, Fresh, Muled, UnassignedInteger};
+use crate::{AssignedInteger, Fresh, Muled, RangeType, UnassignedInteger};
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::RegionCtx;
 use num_bigint::BigUint;
@@ -10,11 +10,19 @@ pub trait BigIntInstructions<F: FieldExt> {
         integer: UnassignedInteger<F>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    fn assign_constant(
+    fn assign_constant_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
+    fn assign_constant_muled(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        integer: BigUint,
+        n1: usize,
+        n2: usize,
+    ) -> Result<AssignedInteger<F, Muled>, Error>;
 
     fn mul(
         &self,
@@ -23,7 +31,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Muled>, Error>;
 
-    fn modular_mul(
+    fn mul_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,

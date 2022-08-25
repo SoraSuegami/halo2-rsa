@@ -62,24 +62,22 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         Ok(self.new_assigned_integer(&limbs))
     }
 
-    fn assign_constant(
+    fn assign_constant_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
-        let out_width = self.out_width;
-        let int_bits_size = Self::bits_size(&integer);
-        let num_limbs = self.num_limbs;
-        assert_eq!(int_bits_size / out_width, num_limbs);
-        let limbs = decompose_big::<F>(integer, num_limbs, int_bits_size);
-        let main_gate = self.main_gate();
-        let mut assigned_limbs: Vec<AssignedLimb<F, Fresh>> = Vec::with_capacity(num_limbs);
+        self.assign_constant(ctx, integer, self.num_limbs)
+    }
 
-        for limb in limbs.iter() {
-            let assigned = main_gate.assign_constant(ctx, *limb)?;
-            assigned_limbs.push(AssignedLimb::from(assigned));
-        }
-        Ok(AssignedInteger::new(&assigned_limbs))
+    fn assign_constant_muled(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        integer: BigUint,
+        n1: usize,
+        n2: usize,
+    ) -> Result<AssignedInteger<F, Muled>, Error> {
+        self.assign_constant(ctx, integer, n1 + n2 - 1)
     }
 
     fn mul(
@@ -113,7 +111,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         Ok(c)
     }
 
-    fn modular_mul(
+    fn mul_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
@@ -171,11 +169,11 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let prod_int = AssignedInteger::new(&prod_limbs);
         let ab = self.mul(ctx, a, b)?;
         let qn = self.mul(ctx, &quotient_int, n)?;
-        let n = n1 + n2;
-        let mut eq_a_limbs: Vec<AssignedLimb<F, Muled>> = Vec::with_capacity(n - 1);
-        let mut eq_b_limbs: Vec<AssignedLimb<F, Muled>> = Vec::with_capacity(n - 1);
+        let n_sum = n1 + n2;
+        let mut eq_a_limbs: Vec<AssignedLimb<F, Muled>> = Vec::with_capacity(n_sum - 1);
+        let mut eq_b_limbs: Vec<AssignedLimb<F, Muled>> = Vec::with_capacity(n_sum - 1);
         let main_gate = self.main_gate();
-        for i in 0..(n - 1) {
+        for i in 0..(n_sum - 1) {
             if i < n1 {
                 eq_a_limbs.push(AssignedLimb::from(ab.limb(i)));
                 let sum = main_gate.add(ctx, &qn.limb(i), &prod_int.limb(i))?;
@@ -254,6 +252,67 @@ impl<F: FieldExt> BigIntChip<F> {
         limbs: &[AssignedLimb<F, T>],
     ) -> AssignedInteger<F, T> {
         AssignedInteger::new(limbs)
+    }
+
+    pub fn compute_range_lens(out_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
+        let out_comp_bit_len = out_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
+        let out_overflow_bit_len = out_width % out_comp_bit_len;
+        let one = BigUint::from(1usize);
+        let out_base = BigUint::from(1usize) << out_width;
+
+        let fresh_word_max_width = (2u32 * &out_base).bits() as usize;
+        let fresh_carry_bits = fresh_word_max_width - out_width;
+        let fresh_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(fresh_carry_bits);
+        let fresh_carry_overflow_bit_len = fresh_carry_bits % fresh_carry_comp_bit_len;
+
+        let mul_word_max =
+            BigUint::from(num_limbs) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
+        let mul_word_max_width = (&mul_word_max * 2u32).bits() as usize;
+        let mul_carry_bits = mul_word_max_width - out_width;
+        let mul_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(mul_carry_bits);
+        let mul_carry_overflow_bit_len = mul_carry_bits % mul_carry_comp_bit_len;
+
+        let composition_bit_lens = vec![
+            out_comp_bit_len,
+            fresh_carry_comp_bit_len,
+            mul_carry_comp_bit_len,
+        ];
+        let overflow_bit_lens = vec![
+            out_overflow_bit_len,
+            fresh_carry_overflow_bit_len,
+            mul_carry_overflow_bit_len,
+        ];
+        (composition_bit_lens, overflow_bit_lens)
+    }
+
+    fn assign_constant<T: RangeType>(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        integer: BigUint,
+        max_num_limbs: usize,
+    ) -> Result<AssignedInteger<F, T>, Error> {
+        let out_width = self.out_width;
+        let int_bits_size = Self::bits_size(&integer);
+        let is_fit = int_bits_size % out_width == 0;
+        let num_limbs = if is_fit {
+            int_bits_size / out_width
+        } else {
+            int_bits_size / out_width + 1
+        };
+        assert!(num_limbs <= max_num_limbs);
+        let limbs = decompose_big::<F>(integer, num_limbs, int_bits_size);
+        let main_gate = self.main_gate();
+        let mut assigned_limbs: Vec<AssignedLimb<F, T>> = Vec::with_capacity(num_limbs);
+
+        for limb in limbs.iter() {
+            let assigned = main_gate.assign_constant(ctx, *limb)?;
+            assigned_limbs.push(AssignedLimb::from(assigned));
+        }
+        let zero = AssignedLimb::<F, T>::from(self.main_gate().assign_constant(ctx, F::zero())?);
+        for _ in 0..(max_num_limbs - num_limbs) {
+            assigned_limbs.push(zero.clone());
+        }
+        Ok(AssignedInteger::new(&assigned_limbs))
     }
 
     fn assert_equal<T: RangeType>(
@@ -352,86 +411,111 @@ impl<F: FieldExt> BigIntChip<F> {
         let out_base = BigUint::from(1usize) << out_width;
         BigUint::from(min_n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one)
     }
-
-    fn compute_range_lens(out_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
-        let out_comp_bit_len = out_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
-        let out_overflow_bit_len = out_width % out_comp_bit_len;
-        let one = BigUint::from(1usize);
-        let out_base = BigUint::from(1usize) << out_width;
-
-        let fresh_word_max_width = (2u32 * &out_base).bits() as usize;
-        let fresh_carry_bits = fresh_word_max_width - out_width;
-        let fresh_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(fresh_carry_bits);
-        let fresh_carry_overflow_bit_len = fresh_carry_bits % fresh_carry_comp_bit_len;
-
-        let mul_word_max =
-            BigUint::from(num_limbs) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
-        let mul_word_max_width = (&mul_word_max * 2u32).bits() as usize;
-        let mul_carry_bits = mul_word_max_width - out_width;
-        let mul_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(mul_carry_bits);
-        let mul_carry_overflow_bit_len = mul_carry_bits % mul_carry_comp_bit_len;
-
-        let composition_bit_lens = vec![
-            out_comp_bit_len,
-            fresh_carry_comp_bit_len,
-            mul_carry_comp_bit_len,
-        ];
-        let overflow_bit_lens = vec![
-            out_overflow_bit_len,
-            fresh_carry_overflow_bit_len,
-            mul_carry_overflow_bit_len,
-        ];
-        (composition_bit_lens, overflow_bit_lens)
-    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use super::*;
     use halo2wrong::halo2::{
         circuit::SimpleFloorPlanner,
         plonk::{Circuit, ConstraintSystem},
     };
 
-    #[derive(Clone, Debug)]
-    struct TestBigIntCircuit<F: FieldExt> {
-        a: BigUint,
-        b: BigUint,
-        n: BigUint,
-        _f: PhantomData<F>,
+    macro_rules! impl_bigint_test_circuit {
+        ($circuit_name:ident, $test_fn_name:ident, $out_width:expr, $bits_len:expr, $( $synth:tt )*) => {
+            #[derive(Clone, Debug)]
+            struct $circuit_name<F: FieldExt> {
+                a: BigUint,
+                b: BigUint,
+                n: BigUint,
+                _f: PhantomData<F>,
+            }
+
+            impl<F: FieldExt> $circuit_name<F> {
+                const OUT_WIDTH: usize = $out_width;
+                const BITS_LEN: usize = $bits_len;
+                fn bigint_chip(&self, config: BigIntConfig) -> BigIntChip<F> {
+                    BigIntChip::new(config, Self::OUT_WIDTH, Self::BITS_LEN)
+                }
+            }
+
+            impl<F: FieldExt> Circuit<F> for $circuit_name<F> {
+                type Config = BigIntConfig;
+                type FloorPlanner = SimpleFloorPlanner;
+
+                fn without_witnesses(&self) -> Self {
+                    unimplemented!();
+                }
+
+                fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+                    let main_gate_config = MainGate::<F>::configure(meta);
+                    let (composition_bit_lens, overflow_bit_lens) =
+                        BigIntChip::<F>::compute_range_lens(
+                            Self::OUT_WIDTH,
+                            Self::BITS_LEN / Self::OUT_WIDTH,
+                        );
+                    let range_config = RangeChip::<F>::configure(
+                        meta,
+                        &main_gate_config,
+                        composition_bit_lens,
+                        overflow_bit_lens,
+                    );
+                    BigIntConfig::new(range_config, main_gate_config)
+                }
+
+                $( $synth )*
+
+            }
+
+            #[test]
+            fn $test_fn_name() {
+                use halo2wrong::halo2::dev::MockProver;
+                use num_bigint::RandomBits;
+                use rand::{thread_rng, Rng};
+                fn run<F: FieldExt>() {
+                    let mut rng = thread_rng();
+                    let bits_len = $circuit_name::<F>::BITS_LEN as u64;
+                    let mut n = BigUint::default();
+                    while n.bits() != bits_len {
+                        n = rng.sample(RandomBits::new(bits_len));
+                    }
+                    let a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+                    let b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+                    let circuit = $circuit_name::<F> {
+                        a,
+                        b,
+                        n,
+                        _f: PhantomData,
+                    };
+
+                    let public_inputs = vec![vec![]];
+                    let k = 14;
+                    let prover = match MockProver::run(k, &circuit, public_inputs) {
+                        Ok(prover) => prover,
+                        Err(e) => panic!("{:#?}", e),
+                    };
+                    assert_eq!(prover.verify(), Ok(()));
+                }
+
+                use halo2wrong::curves::bn256::Fq as BnFq;
+                use halo2wrong::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+                use halo2wrong::curves::secp256k1::Secp256k1Affine as Secp256k1;
+                for _ in 0..10 {
+                    run::<BnFq>();
+                    run::<PastaFp>();
+                    run::<PastaFq>();
+                }
+            }
+        };
     }
 
-    impl<F: FieldExt> TestBigIntCircuit<F> {
-        const OUT_WIDTH: usize = 64;
-        const BITS_LEN: usize = 2048;
-        fn bigint_chip(&self, config: BigIntConfig) -> BigIntChip<F> {
-            BigIntChip::new(config, Self::OUT_WIDTH, Self::BITS_LEN)
-        }
-    }
-
-    impl<F: FieldExt> Circuit<F> for TestBigIntCircuit<F> {
-        type Config = BigIntConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            unimplemented!();
-        }
-
-        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let main_gate_config = MainGate::<F>::configure(meta);
-            let (composition_bit_lens, overflow_bit_lens) = BigIntChip::<F>::compute_range_lens(
-                Self::OUT_WIDTH,
-                Self::BITS_LEN / Self::OUT_WIDTH,
-            );
-            let range_config = RangeChip::<F>::configure(
-                meta,
-                &main_gate_config,
-                composition_bit_lens,
-                overflow_bit_lens,
-            );
-            BigIntConfig::new(range_config, main_gate_config)
-        }
-
+    impl_bigint_test_circuit!(
+        TestMulCircuit,
+        test_mul_circuit,
+        64,
+        2048,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -440,7 +524,117 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
             layouter.assign_region(
-                || "assign aux values",
+                || "random mul test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestMuledEqualCircuit,
+        test_muled_equal_circuit,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random assert_equal_muled test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ba = bigint_chip.mul(ctx, &b_assigned, &a_assigned)?;
+                    bigint_chip.assert_equal_muled(
+                        ctx,
+                        &ab,
+                        &ba,
+                        a_assigned.num_limbs(),
+                        b_assigned.num_limbs(),
+                    )?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestFreshEqualCircuit,
+        test_fresh_equal_circuit,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random assert_equal_fresh test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a1_unassigned = UnassignedInteger::from(a1_limbs);
+                    let a2_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a2_unassigned = UnassignedInteger::from(a2_limbs);
+                    let a1_assigned = bigint_chip.assign_integer(ctx, a1_unassigned)?;
+                    let a2_assigned = bigint_chip.assign_integer(ctx, a2_unassigned)?;
+                    bigint_chip.assert_equal_fresh(ctx, &a1_assigned, &a2_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestMulModEqualCircuit,
+        test_module_mul_equal_circuit,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random mul_mod test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
@@ -453,20 +647,9 @@ mod test {
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
-                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
-                    let ba = bigint_chip.mul(ctx, &b_assigned, &a_assigned)?;
-                    bigint_chip.assert_equal_muled(
-                        ctx,
-                        &ab,
-                        &ba,
-                        a_assigned.num_limbs(),
-                        b_assigned.num_limbs(),
-                    )?;
-                    let ab_mod_n =
-                        bigint_chip.modular_mul(ctx, &a_assigned, &b_assigned, &n_assigned)?;
-                    let ba_mod_n =
-                        bigint_chip.modular_mul(ctx, &b_assigned, &a_assigned, &n_assigned)?;
-                    bigint_chip.assert_equal_fresh(ctx, &ab_mod_n, &ba_mod_n)?;
+                    let ab = bigint_chip.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
+                    let ba = bigint_chip.mul_mod(ctx, &b_assigned, &a_assigned, &n_assigned)?;
+                    bigint_chip.assert_equal_fresh(ctx, &ab, &ba)?;
                     Ok(())
                 },
             )?;
@@ -475,54 +658,311 @@ mod test {
             range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
-    }
+    );
 
-    #[test]
-    fn test_bigint_chip() {
-        use halo2wrong::halo2::dev::MockProver;
-        use num_bigint::RandomBits;
-        use rand::{thread_rng, Rng};
-        fn run<F: FieldExt>() {
-            let mut rng = thread_rng();
-            let bits_len = TestBigIntCircuit::<F>::BITS_LEN as u64;
-            let mut n = BigUint::default();
-            while n.bits() != bits_len {
-                n = rng.sample(RandomBits::new(bits_len));
-            }
-            let a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
-            let b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
-            println!("ab {}", (&a * &b).to_str_radix(16));
-            println!(
-                "size a {} b {} n {} ab {} q {}",
-                a.bits(),
-                b.bits(),
-                n.bits(),
-                (&a * &b).bits(),
-                (&a * &b / &n).bits(),
-            );
-            let circuit = TestBigIntCircuit::<F> {
-                a,
-                b,
-                n,
-                _f: PhantomData,
-            };
-
-            let public_inputs = vec![vec![]];
-            let k = 14;
-            let prover = match MockProver::run(k, &circuit, public_inputs) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-            assert_eq!(prover.verify(), Ok(()));
+    impl_bigint_test_circuit!(
+        TestMulCase1Circuit,
+        test_mul_case1,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            layouter.assign_region(
+                || "1 * 1 = 1",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let one = bigint_chip.assign_constant_fresh(ctx, BigUint::from(1usize))?;
+                    let n = one.num_limbs();
+                    let one_muled = bigint_chip.mul(ctx, &one, &one)?;
+                    let zero = AssignedLimb::from(
+                        bigint_chip.main_gate().assign_constant(ctx, F::zero())?,
+                    );
+                    bigint_chip.assert_equal_muled(ctx, &one.to_muled(zero), &one_muled, n, n)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
         }
+    );
 
-        use halo2wrong::curves::bn256::Fq as BnFq;
-        use halo2wrong::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
-        use halo2wrong::curves::secp256k1::Secp256k1Affine as Secp256k1;
-        for _ in 0..10 {
-            run::<BnFq>();
-            run::<PastaFp>();
-            run::<PastaFq>();
+    impl_bigint_test_circuit!(
+        TestMulCase3Circuit,
+        test_mul_case3,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            layouter.assign_region(
+                || "(1+0x+3x^2)(3+1x) = 3+1x+9x^2+3x^3",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let a_big =
+                        BigUint::from(1usize) + 0usize * &out_base + 3usize * &out_base * &out_base;
+                    let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
+                    let n1 = a_assigned.num_limbs();
+                    let b_big =
+                        BigUint::from(3usize) + 1usize * &out_base + 0usize * &out_base * &out_base;
+                    let b_assigned = bigint_chip.assign_constant_fresh(ctx, b_big)?;
+                    let n2 = b_assigned.num_limbs();
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ans_big = BigUint::from(3usize)
+                        + 1usize * &out_base
+                        + 9usize * &out_base * &out_base
+                        + 3usize * &out_base * &out_base * &out_base;
+                    let ans_assigned = bigint_chip.assign_constant_muled(ctx, ans_big, n1, n2)?;
+                    bigint_chip.assert_equal_muled(ctx, &ab, &ans_assigned, n1, n2)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
         }
-    }
+    );
+
+    impl_bigint_test_circuit!(
+        TestMulCase4Circuit,
+        test_mul_case4,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            layouter.assign_region(
+                || "(3 + 4x + 5x^2 + 6x^3)(9 + 10x + 11x^2 + 12x^3) =  27 + 66 x  + 118 x^2 + 184 x^3 + 163 x^4 + 126 x^5 + 72 x^6 ",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let a_big =
+                        BigUint::from(3usize) + 4usize * &out_base + 5usize * &out_base.pow(2) + 6usize * &out_base.pow(3);
+                    let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
+                    let n1 = a_assigned.num_limbs();
+                    let b_big =
+                        BigUint::from(9usize) + 10usize * &out_base + 11usize * &out_base.pow(2) + 12usize * &out_base.pow(3);
+                    let b_assigned = bigint_chip.assign_constant_fresh(ctx, b_big)?;
+                    let n2 = b_assigned.num_limbs();
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ans_big = BigUint::from(27usize) + 66usize * &out_base + 118usize * &out_base.pow(2u32) + 184usize * &out_base.pow(3u32) + 163usize * &out_base.pow(4u32) + 126usize * &out_base.pow(5u32) + 72usize * &out_base.pow(6u32);
+                    let ans_assigned = bigint_chip.assign_constant_muled(ctx, ans_big, n1, n2)?;
+                    bigint_chip.assert_equal_muled(ctx, &ab, &ans_assigned, n1, n2)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestMulCase5Circuit,
+        test_mul_case5,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            layouter.assign_region(
+                || "big square test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let a_big = BigUint::from(4819187580044832333u128)
+                        + 9183764011217009606u128 * &out_base
+                        + 11426964127496009747u128 * &out_base.pow(2)
+                        + 17898263845095661790u128 * &out_base.pow(3)
+                        + 12102522037140783322u128 * &out_base.pow(4)
+                        + 4029304176671511763u128 * &out_base.pow(5)
+                        + 11339410859987005436u128 * &out_base.pow(6)
+                        + 12120243430436644729u128 * &out_base.pow(7)
+                        + 2888435820322958146u128 * &out_base.pow(8)
+                        + 7612614626488966390u128 * &out_base.pow(9)
+                        + 3872170484348249672u128 * &out_base.pow(10)
+                        + 9589147526444685354u128 * &out_base.pow(11)
+                        + 16391157694429928307u128 * &out_base.pow(12)
+                        + 12256166884204507566u128 * &out_base.pow(13)
+                        + 4257963982333550934u128 * &out_base.pow(14)
+                        + 916988490704u128 * &out_base.pow(15);
+                    let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
+                    let n1 = a_assigned.num_limbs();
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &a_assigned)?;
+                    let ans_big = BigUint::from(23224568931658367244754058218082222889u128)
+                        + BigUint::from_str("88516562921839445888640380379840781596").unwrap()
+                            * &out_base
+                        + BigUint::from_str("194478888615417946406783868151393774738").unwrap()
+                            * &out_base.pow(2)
+                        + BigUint::from_str("382395265476432217957523230769986571504").unwrap()
+                            * &out_base.pow(3)
+                        + BigUint::from_str("575971019676008360859069855433378813941").unwrap()
+                            * &out_base.pow(4)
+                        + BigUint::from_str("670174995752918677131397897218932582682").unwrap()
+                            * &out_base.pow(5)
+                        + BigUint::from_str("780239872348808029089572423614905198300").unwrap()
+                            * &out_base.pow(6)
+                        + BigUint::from_str("850410093737715640261630122959874522628").unwrap()
+                            * &out_base.pow(7)
+                        + BigUint::from_str("800314959349304909735238452892956199392").unwrap()
+                            * &out_base.pow(8)
+                        + BigUint::from_str("906862855407309870283714027678210238070").unwrap()
+                            * &out_base.pow(9)
+                        + BigUint::from_str("967727310654811444144097720329196927129").unwrap()
+                            * &out_base.pow(10)
+                        + BigUint::from_str("825671020037461535758117365587238596380").unwrap()
+                            * &out_base.pow(11)
+                        + BigUint::from_str("991281789723902700168027417052185830252").unwrap()
+                            * &out_base.pow(12)
+                        + BigUint::from_str("1259367815833216292413970809061165585320").unwrap()
+                            * &out_base.pow(13)
+                        + BigUint::from_str("1351495628781923848799708082622582598675").unwrap()
+                            * &out_base.pow(14)
+                        + BigUint::from_str("1451028634949220760698564802414695011932").unwrap()
+                            * &out_base.pow(15)
+                        + BigUint::from_str("1290756126635958771067082204577975256756").unwrap()
+                            * &out_base.pow(16)
+                        + BigUint::from_str("936482288980049848345464202850902738826").unwrap()
+                            * &out_base.pow(17)
+                        + BigUint::from_str("886330568585033438612679243731110283692").unwrap()
+                            * &out_base.pow(18)
+                        + BigUint::from_str("823948310509772835433730556487356331346").unwrap()
+                            * &out_base.pow(19)
+                        + BigUint::from_str("649341353489205691855914543942648985328").unwrap()
+                            * &out_base.pow(20)
+                        + BigUint::from_str("497838205323760437611385487609464464168").unwrap()
+                            * &out_base.pow(21)
+                        + BigUint::from_str("430091148520710550273018448938020664564").unwrap()
+                            * &out_base.pow(22)
+                        + BigUint::from_str("474098876922017329965321439330710234148").unwrap()
+                            * &out_base.pow(23)
+                        + BigUint::from_str("536697574159375092388958994084813127393").unwrap()
+                            * &out_base.pow(24)
+                        + BigUint::from_str("483446024935732188792400155524449880972").unwrap()
+                            * &out_base.pow(25)
+                        + BigUint::from_str("289799562463011227421662267162524920264").unwrap()
+                            * &out_base.pow(26)
+                        + BigUint::from_str("104372664369829937912234314161010649544").unwrap()
+                            * &out_base.pow(27)
+                        + BigUint::from_str("18130279752377737976455635841349605284").unwrap()
+                            * &out_base.pow(28)
+                        + BigUint::from_str("7809007931264072381739139035072").unwrap()
+                            * &out_base.pow(29)
+                        + BigUint::from_str("840867892083599894415616").unwrap()
+                            * &out_base.pow(30)
+                        + BigUint::from_str("0").unwrap() * &out_base.pow(31);
+                    let ans_assigned = bigint_chip.assign_constant_muled(ctx, ans_big, n1, n1)?;
+                    bigint_chip.assert_equal_muled(ctx, &ab, &ans_assigned, n1, n1)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestMulCase6Circuit,
+        test_mul_case6,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            layouter.assign_region(
+                || "(1+x)(1+x+x^2) =  1 + 2x + 2x^2 + x^3",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let a_big = BigUint::from(1usize) + 1usize * &out_base;
+                    let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
+                    let n1 = a_assigned.num_limbs();
+                    let b_big =
+                        BigUint::from(1usize) + 1usize * &out_base + 1usize * &out_base.pow(2);
+                    let b_assigned = bigint_chip.assign_constant_fresh(ctx, b_big)?;
+                    let n2 = b_assigned.num_limbs();
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ans_big = BigUint::from(1usize)
+                        + 2usize * &out_base
+                        + 2usize * &out_base.pow(2u32)
+                        + 1usize * &out_base.pow(3u32);
+                    let ans_assigned = bigint_chip.assign_constant_muled(ctx, ans_big, n1, n2)?;
+                    bigint_chip.assert_equal_muled(ctx, &ab, &ans_assigned, n1, n2)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestMulCase7Circuit,
+        test_mul_case7,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            layouter.assign_region(
+                || "(1+7x)(1+x+x^2) =  1 + 8x + 8x^2 + 7x^3",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let a_big = BigUint::from(1usize) + 7usize * &out_base;
+                    let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
+                    let n1 = a_assigned.num_limbs();
+                    let b_big =
+                        BigUint::from(1usize) + 1usize * &out_base + 1usize * &out_base.pow(2);
+                    let b_assigned = bigint_chip.assign_constant_fresh(ctx, b_big)?;
+                    let n2 = b_assigned.num_limbs();
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ans_big = BigUint::from(1usize)
+                        + 8usize * &out_base
+                        + 8usize * &out_base.pow(2u32)
+                        + 7usize * &out_base.pow(3u32);
+                    let ans_assigned = bigint_chip.assign_constant_muled(ctx, ans_big, n1, n2)?;
+                    bigint_chip.assert_equal_muled(ctx, &ab, &ans_assigned, n1, n2)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
 }

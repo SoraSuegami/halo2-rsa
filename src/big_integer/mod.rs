@@ -1,6 +1,6 @@
 mod chip;
 mod instructions;
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Mul};
 
 pub use chip::*;
 pub use instructions::*;
@@ -38,6 +38,12 @@ impl<F: FieldExt, T: RangeType> From<AssignedLimb<F, T>> for AssignedValue<F> {
 impl<F: FieldExt, T: RangeType> From<&AssignedLimb<F, T>> for AssignedValue<F> {
     fn from(limb: &AssignedLimb<F, T>) -> Self {
         limb.0.clone()
+    }
+}
+
+impl<F: FieldExt> AssignedLimb<F, Fresh> {
+    pub fn to_muled(self) -> AssignedLimb<F, Muled> {
+        AssignedLimb::<F, Muled>(self.0, PhantomData)
     }
 }
 
@@ -141,5 +147,20 @@ impl<F: FieldExt, T: RangeType> AssignedInteger<F, T> {
             self.0.push(AssignedLimb::from(zero_value.clone()));
         }
         assert_eq!(pre_num_limbs + num_extend_limbs, self.num_limbs());
+    }
+}
+
+impl<F: FieldExt> AssignedInteger<F, Fresh> {
+    pub fn to_muled(&self, zero_limb: AssignedLimb<F, Muled>) -> AssignedInteger<F, Muled> {
+        let num_limb = self.num_limbs();
+        let mut limbs = self
+            .limbs()
+            .into_iter()
+            .map(|limb| limb.to_muled())
+            .collect::<Vec<AssignedLimb<F, Muled>>>();
+        for _ in 0..(num_limb - 1) {
+            limbs.push(zero_limb.clone())
+        }
+        AssignedInteger::<F, Muled>::new(&limbs[..])
     }
 }
