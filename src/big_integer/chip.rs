@@ -561,7 +561,7 @@ mod test {
                     };
 
                     let public_inputs = vec![vec![]];
-                    let k = 15;
+                    let k = 16;
                     let prover = match MockProver::run(k, &circuit, public_inputs) {
                         Ok(prover) => prover,
                         Err(e) => panic!("{:#?}", e),
@@ -572,8 +572,8 @@ mod test {
                 use halo2wrong::curves::bn256::Fq as BnFq;
                 use halo2wrong::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
                 run::<BnFq>();
-                //run::<PastaFp>();
-                //run::<PastaFq>();
+                run::<PastaFp>();
+                run::<PastaFq>();
             }
         };
     }
