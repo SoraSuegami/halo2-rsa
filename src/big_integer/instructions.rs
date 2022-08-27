@@ -39,6 +39,30 @@ pub trait BigIntInstructions<F: FieldExt> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
+    fn square_mod(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
+    fn pow_mod(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        e: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+        num_exp_bits: usize,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
+    fn pow_mod_fixed_exp(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        e: &BigUint,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
     fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
