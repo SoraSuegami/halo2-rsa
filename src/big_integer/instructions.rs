@@ -52,7 +52,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         a: &AssignedInteger<F, Fresh>,
         e: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
-        num_exp_bits: usize,
+        exp_limb_bits: usize,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
     fn pow_mod_fixed_exp(
