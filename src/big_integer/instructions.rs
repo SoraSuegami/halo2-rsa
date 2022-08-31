@@ -3,6 +3,7 @@ use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::RegionCtx;
 use num_bigint::BigUint;
 
+/// Instructions for `BigIntegerChip`
 pub trait BigIntInstructions<F: FieldExt> {
     fn assign_integer(
         &self,

@@ -1,8 +1,8 @@
-mod big_integer;
+pub mod big_integer;
 //mod rsa_signature;
-mod chip;
-pub use big_integer::*;
-pub use chip::*;
+pub mod chip;
+use big_integer::*;
+use chip::*;
 //pub use rsa_signature::*;
 use halo2wrong::halo2::arithmetic::FieldExt;
 
