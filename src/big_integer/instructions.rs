@@ -3,20 +3,23 @@ use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::RegionCtx;
 use num_bigint::BigUint;
 
-/// Instructions for `BigIntegerChip`
+/// Instructions for big-integer operations.
 pub trait BigIntInstructions<F: FieldExt> {
+    /// Given a witness integer as [`UnassignedInteger`], returns a new [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: UnassignedInteger<F>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
+    /// Given a constant integer as [`BigUint`], returns a new [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
     fn assign_constant_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
+    /// Given a constant integer as [`BigUint`], returns a new [`AssignedInteger`] whose [`RangeType`] is [`Muled`].
     fn assign_constant_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -25,6 +28,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         n2: usize,
     ) -> Result<AssignedInteger<F, Muled>, Error>;
 
+    /// Given two [`AssignedInteger`] $a,b$, returns their product $ab$ as [`AssignedInteger`].
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,

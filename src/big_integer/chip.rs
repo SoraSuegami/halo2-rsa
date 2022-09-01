@@ -11,12 +11,12 @@ use maingate::{
 
 use num_bigint::BigUint;
 
-/// Configuration for [`BigIntegerChip`]
+/// Configuration for [`BigIntChip`].
 #[derive(Clone, Debug)]
 pub struct BigIntConfig {
-    /// Configuration for [`RangeChip`]
+    /// Configuration for [`RangeChip`].
     range_config: RangeConfig,
-    /// Configuration for [`MainGate`]
+    /// Configuration for [`MainGate`].
     main_gate_config: MainGateConfig,
 }
 
@@ -29,12 +29,14 @@ impl BigIntConfig {
     }
 }
 
-/// Chip for integer instructions
+/// Chip for [`BigIntInstructions`].
 #[derive(Debug)]
 pub struct BigIntChip<F: FieldExt> {
-    /// Chip configuration
+    /// Chip configuration.
     config: BigIntConfig,
+    /// The Width of each limb of the [`Fresh`] range-type integer operated in this chip. That is, the limb is `out_width`-bit integer.
     out_width: usize,
+    /// The number of limbs of the [`Fresh`] range-type integer operated in this chip.
     num_limbs: usize,
     _f: PhantomData<F>,
 }
