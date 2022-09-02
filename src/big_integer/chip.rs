@@ -155,10 +155,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let c = AssignedInteger::new(&c_limbs);
         let (added, carry) = self.add(ctx, b, &c)?;
         main_gate.assert_zero(ctx, &carry.into())?;
-        for i in 0..a.num_limbs() {
-            main_gate.assert_equal(ctx, &a.limb(i), &added.limb(i))?;
-        }
-        //self.assert_equal_fresh(ctx, a, &added)?;
+        self.assert_equal_fresh(ctx, a, &added)?;
         Ok(c)
     }
 
@@ -342,17 +339,133 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         Ok(acc)
     }
 
+    fn is_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        let main_gate = self.main_gate();
+        let mut assigned_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
+        for limb in a.limbs().into_iter() {
+            let is_zero = main_gate.is_zero(ctx, &limb.0)?;
+            assigned_bit = main_gate.and(ctx, &assigned_bit, &is_zero)?;
+        }
+        Ok(assigned_bit)
+    }
+
+    fn is_equal_fresh(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        let n1 = a.num_limbs();
+        let n2 = b.num_limbs();
+        let is_a_larger = n1 > n2;
+        let max_n = if is_a_larger { n1 } else { n2 };
+        let main_gate = self.main_gate();
+        let mut eq_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
+        for i in 0..max_n {
+            let flag = if is_a_larger && i >= n2 {
+                main_gate.is_zero(ctx, &a.limb(i))?
+            } else if !is_a_larger && i >= n1 {
+                main_gate.is_zero(ctx, &b.limb(i))?
+            } else {
+                main_gate.is_equal(ctx, &a.limb(i), &b.limb(i))?
+            };
+            eq_bit = main_gate.and(ctx, &eq_bit, &flag)?;
+        }
+        Ok(eq_bit)
+    }
+
+    fn is_equal_muled(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Muled>,
+        b: &AssignedInteger<F, Muled>,
+        n1: usize,
+        n2: usize,
+    ) -> Result<AssignedValue<F>, Error> {
+        let min_n = if n2 >= n1 { n1 } else { n2 };
+        //let n = n1 + n2;
+        let word_max = Self::compute_mul_word_max(self.out_width, min_n);
+        let out_width = self.out_width;
+        let num_chunk = n1 + n2 - 1;
+        //self.assert_equal(ctx, a, b, max_word, self.out_width, n - 1)
+        let word_max_width = Self::bits_size(&(&word_max * 2u32));
+        let carry_bits = word_max_width - out_width;
+        let main_gate = self.main_gate();
+        let range_chip = self.range_chip();
+        let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << out_width))?;
+        let mut accumulated_extra = main_gate.assign_constant(ctx, F::zero())?;
+        let mut carry = Vec::with_capacity(num_chunk);
+        let mut cs = Vec::with_capacity(num_chunk);
+        carry.push(main_gate.assign_constant(ctx, F::zero())?);
+        let mut eq_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
+        for i in 0..num_chunk {
+            let a_b = main_gate.sub(ctx, &a.limb(i), &b.limb(i))?;
+            let sum =
+                main_gate.add_with_constant(ctx, &a_b, &carry[i], big_to_fe(word_max.clone()))?;
+            let (new_carry, c) = self.div_mod_main_gate(ctx, &sum, &out_base)?;
+            carry.push(new_carry);
+            cs.push(c);
+
+            accumulated_extra =
+                main_gate.add_constant(ctx, &accumulated_extra, big_to_fe(word_max.clone()))?;
+            let (q_acc, mod_acc) = self.div_mod_main_gate(ctx, &accumulated_extra, &out_base)?;
+            //main_gate.assert_equal(ctx, &cs[i], &mod_acc)?;
+            let cs_acc_eq = main_gate.is_equal(ctx, &cs[i], &mod_acc)?;
+            eq_bit = main_gate.and(ctx, &eq_bit, &cs_acc_eq)?;
+            accumulated_extra = q_acc;
+
+            if i < num_chunk - 1 {
+                let carry_value = carry[i + 1].value().copied();
+                let range_assigned = range_chip.assign(
+                    ctx,
+                    carry_value,
+                    Self::sublimb_bit_len(carry_bits),
+                    carry_bits,
+                )?;
+                let range_eq = main_gate.is_equal(ctx, &carry[i + 1], &range_assigned)?;
+                eq_bit = main_gate.and(ctx, &eq_bit, &range_eq)?;
+            } else {
+                // The final carry should match the extra
+                let final_carry_eq = main_gate.is_equal(ctx, &carry[i + 1], &accumulated_extra)?;
+                eq_bit = main_gate.and(ctx, &eq_bit, &final_carry_eq)?;
+            }
+        }
+        Ok(eq_bit)
+    }
+
+    fn is_in_field(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        // Asserts `n-a>0`, i.e. `0<=a<n`.
+        let sub = self.sub(ctx, n, a)?;
+        let is_zero = self.is_zero(ctx, &sub)?;
+        self.main_gate().not(ctx, &is_zero)
+    }
+
+    fn assert_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let eq_bit = self.is_zero(ctx, a)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
+    }
+
     fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
-        let out_width = self.out_width;
-        let word_max = BigUint::from(1usize) << out_width;
-        let num_chunk = a.num_limbs();
-        assert_eq!(num_chunk, b.num_limbs());
-        self.assert_equal(ctx, a, b, word_max, out_width, num_chunk)
+        let eq_bit = self.is_equal_fresh(ctx, a, b)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
     }
 
     fn assert_equal_muled(
@@ -363,10 +476,18 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         n1: usize,
         n2: usize,
     ) -> Result<(), Error> {
-        let min_n = if n2 >= n1 { n1 } else { n2 };
-        let n = n1 + n2;
-        let max_word = Self::compute_mul_word_max(self.out_width, min_n);
-        self.assert_equal(ctx, a, b, max_word, self.out_width, n - 1)
+        let eq_bit = self.is_equal_muled(ctx, a, b, n1, n2)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
+    }
+
+    fn assert_in_field(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let eq_bit = self.is_in_field(ctx, a, n)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
     }
 }
 
@@ -467,55 +588,6 @@ impl<F: FieldExt> BigIntChip<F> {
         Ok(AssignedInteger::new(&assigned_limbs))
     }
 
-    fn assert_equal<T: RangeType>(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        a: &AssignedInteger<F, T>,
-        b: &AssignedInteger<F, T>,
-        word_max: BigUint,
-        out_width: usize,
-        num_chunk: usize,
-    ) -> Result<(), Error> {
-        let word_max_width = Self::bits_size(&(&word_max * 2u32));
-        let carry_bits = word_max_width - out_width;
-        let main_gate = self.main_gate();
-        let range_chip = self.range_chip();
-        let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << out_width))?;
-        let mut accumulated_extra = main_gate.assign_constant(ctx, F::zero())?;
-        let mut carry = Vec::with_capacity(num_chunk);
-        let mut cs = Vec::with_capacity(num_chunk);
-        carry.push(main_gate.assign_constant(ctx, F::zero())?);
-        for i in 0..num_chunk {
-            let a_b = main_gate.sub(ctx, &a.limb(i), &b.limb(i))?;
-            let sum =
-                main_gate.add_with_constant(ctx, &a_b, &carry[i], big_to_fe(word_max.clone()))?;
-            let (new_carry, c) = self.div_mod_main_gate(ctx, &sum, &out_base)?;
-            carry.push(new_carry);
-            cs.push(c);
-
-            accumulated_extra =
-                main_gate.add_constant(ctx, &accumulated_extra, big_to_fe(word_max.clone()))?;
-            let (q_acc, mod_acc) = self.div_mod_main_gate(ctx, &accumulated_extra, &out_base)?;
-            main_gate.assert_equal(ctx, &cs[i], &mod_acc)?;
-            accumulated_extra = q_acc;
-
-            if i < num_chunk - 1 {
-                let carry_value = carry[i + 1].value().copied();
-                let range_assigned = range_chip.assign(
-                    ctx,
-                    carry_value,
-                    Self::sublimb_bit_len(carry_bits),
-                    carry_bits,
-                )?;
-                main_gate.assert_equal(ctx, &carry[i + 1], &range_assigned)?;
-            } else {
-                // The final carry should match the extra
-                main_gate.assert_equal(ctx, &carry[i + 1], &accumulated_extra)?;
-            }
-        }
-        Ok(())
-    }
-
     fn div_mod_main_gate(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -576,7 +648,7 @@ mod test {
     };
 
     macro_rules! impl_bigint_test_circuit {
-        ($circuit_name:ident, $test_fn_name:ident, $out_width:expr, $bits_len:expr, $( $synth:tt )*) => {
+        ($circuit_name:ident, $test_fn_name:ident, $out_width:expr, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
             #[derive(Clone, Debug)]
             struct $circuit_name<F: FieldExt> {
                 a: BigUint,
@@ -646,9 +718,9 @@ mod test {
                     let k = 16;
                     let prover = match MockProver::run(k, &circuit, public_inputs) {
                         Ok(prover) => prover,
-                        Err(e) => panic!("{:#?}", e),
+                        Err(e) => panic!("{:#?}", e)
                     };
-                    assert_eq!(prover.verify(), Ok(()));
+                    assert_eq!(prover.verify().is_err(), $should_be_error);
                 }
 
                 use halo2wrong::curves::bn256::Fq as BnFq;
@@ -665,6 +737,7 @@ mod test {
         test_add_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -710,6 +783,7 @@ mod test {
         test_sub_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -748,6 +822,7 @@ mod test {
         test_mul_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -782,6 +857,7 @@ mod test {
         test_muled_equal_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -824,6 +900,7 @@ mod test {
         test_fresh_equal_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -858,6 +935,7 @@ mod test {
         test_module_mul_equal_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -897,6 +975,7 @@ mod test {
         test_pow_mod_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -914,13 +993,10 @@ mod test {
                     let e_bit = 4;
                     let e: BigUint =
                         self.b.clone() & ((BigUint::from(1usize) << e_bit) - BigUint::from(1usize));
-                    //let e_limbs = decompose_big::<F>(e.clone(), num_limbs, Self::OUT_WIDTH);
-                    //let e_unassigned = UnassignedInteger::from(e_limbs);
                     let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let e_assigned = bigint_chip.assign_constant(ctx, e.clone(), 1)?;
-                    //.assign_integer(ctx, e_unassigned)?;
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     let powed =
                         bigint_chip.pow_mod(ctx, &a_assigned, &e_assigned, &n_assigned, e_bit)?;
@@ -942,6 +1018,7 @@ mod test {
         test_pow_mod_fixed_exp_circuit,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -977,6 +1054,113 @@ mod test {
         }
     );
 
+    impl_bigint_test_circuit!(
+        TestIsZeroCircuit,
+        test_is_zero_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random is_zero test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    assert!(self.a != BigUint::from(0usize));
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
+                    let a_is_zero = bigint_chip.is_zero(ctx, &a_assigned)?;
+                    let zero_is_zero = bigint_chip.is_zero(ctx, &zero)?;
+                    let main_gate = bigint_chip.main_gate();
+                    main_gate.assert_zero(ctx, &a_is_zero)?;
+                    main_gate.assert_one(ctx, &zero_is_zero)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestInFieldCircuit,
+        test_in_field_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random assert_in_field test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
+                    bigint_chip.assert_in_field(ctx, &a_assigned, &n_assigned)?;
+                    let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
+                    bigint_chip.assert_in_field(ctx, &zero, &n_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestNotInFieldCircuit,
+        test_not_in_field_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random assert_in_field test with an error case",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
+                    bigint_chip.assert_in_field(ctx, &n_assigned, &n_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
     fn big_pow_mod(a: &BigUint, b: &BigUint, n: &BigUint) -> BigUint {
         let one = BigUint::from(1usize);
         let two = BigUint::from(2usize);
@@ -999,6 +1183,7 @@ mod test {
         test_mul_case1,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1032,6 +1217,7 @@ mod test {
         test_mul_case3,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1074,6 +1260,7 @@ mod test {
         test_mul_case4,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1113,6 +1300,7 @@ mod test {
         test_mul_case5,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1223,6 +1411,7 @@ mod test {
         test_mul_case6,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1264,6 +1453,7 @@ mod test {
         test_mul_case7,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1305,6 +1495,7 @@ mod test {
         test_mulmod_case1,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1346,6 +1537,7 @@ mod test {
         test_mulmod_case2,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1385,6 +1577,7 @@ mod test {
         test_mulmod_case3,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1426,6 +1619,7 @@ mod test {
         test_mulmod_case4,
         64,
         2048,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,

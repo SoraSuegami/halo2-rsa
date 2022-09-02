@@ -1,6 +1,6 @@
 use crate::{AssignedInteger, Fresh, Muled, RangeType, UnassignedInteger};
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
-use maingate::RegionCtx;
+use maingate::{AssignedValue, RegionCtx};
 use num_bigint::BigUint;
 
 use super::AssignedLimb;
@@ -90,7 +90,47 @@ pub trait BigIntInstructions<F: FieldExt> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    /// Asserts that the given `a` and `b` are equivalent, where their range-type is `Fresh`.
+    /// Returns an assigned bit repesenting whether `a` is zero or not.
+    fn is_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Returns an assigned bit repesenting whether `a` and `b` are equivalent, where the range-type is `Fresh`.
+    fn is_equal_fresh(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    ///Returns an assigned bit repesenting whether `a` and `b` are equivalent, where their range-type is `Muled`.
+    fn is_equal_muled(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Muled>,
+        b: &AssignedInteger<F, Muled>,
+        n1: usize,
+        n2: usize,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Returns an assigned bit repesenting whether `a` is in the order-`n` finite field.
+    fn is_in_field(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Asserts that that `a` is zero or not.
+    fn assert_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error>;
+
+    /// Asserts that `a` and `b` are equivalent, whose range-type is `Fresh`.
     fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -98,7 +138,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error>;
 
-    /// Asserts that the given `a` and `b` are equivalent, where their range-type is `Muled`.
+    /// Asserts that `a` and `b` are equivalent, whose range-type is `Muled`.
     fn assert_equal_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -106,5 +146,13 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Muled>,
         n1: usize,
         n2: usize,
+    ) -> Result<(), Error>;
+
+    /// Asserts that `a` is in the order-`n` finite field.
+    fn assert_in_field(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error>;
 }
