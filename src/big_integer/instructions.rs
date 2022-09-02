@@ -3,6 +3,8 @@ use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::RegionCtx;
 use num_bigint::BigUint;
 
+use super::AssignedLimb;
+
 /// Instructions for big-integer operations.
 pub trait BigIntInstructions<F: FieldExt> {
     /// Assign a variable integer [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
@@ -27,6 +29,22 @@ pub trait BigIntInstructions<F: FieldExt> {
         n1: usize,
         n2: usize,
     ) -> Result<AssignedInteger<F, Muled>, Error>;
+
+    /// Given two inputs `a,b`, performs the addition `a + b`.
+    fn add(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(AssignedInteger<F, Fresh>, AssignedLimb<F, Fresh>), Error>;
+
+    /// Given two inputs `a,b`, performs the subtraction `a - b`.
+    fn sub(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
     /// Given two inputs `a,b`, performs the multiplication `a*b`.
     fn mul(
@@ -72,7 +90,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    /// Asserts that the given `a` and `b` are equivalent, where their range type is `Fresh`.
+    /// Asserts that the given `a` and `b` are equivalent, where their range-type is `Fresh`.
     fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -80,7 +98,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error>;
 
-    /// Asserts that the given `a` and `b` are equivalent, where their range type is `Muled`.
+    /// Asserts that the given `a` and `b` are equivalent, where their range-type is `Muled`.
     fn assert_equal_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,

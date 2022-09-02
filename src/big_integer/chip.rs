@@ -82,6 +82,86 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         self.assign_constant(ctx, integer, n1 + n2 - 1)
     }
 
+    fn add(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(AssignedInteger<F, Fresh>, AssignedLimb<F, Fresh>), Error> {
+        let out_width = self.out_width;
+        let n1 = a.num_limbs();
+        let n2 = b.num_limbs();
+        let max_n = if n1 < n2 { n2 } else { n1 };
+        let main_gate = self.main_gate();
+        let range_chip = self.range_chip();
+        let zero_value = main_gate.assign_constant(ctx, F::zero())?;
+        let mut a = a.clone();
+        a.extend_limbs(max_n - n1, zero_value.clone());
+        let mut b = b.clone();
+        b.extend_limbs(max_n - n2, zero_value.clone());
+        let mut c_vals = Vec::with_capacity(max_n);
+        let mut carrys = Vec::with_capacity(max_n + 1);
+        carrys.push(zero_value);
+        let out_base = BigUint::from(1usize) << out_width;
+        let out_base_val = main_gate.assign_constant(ctx, big_to_fe(out_base.clone()))?;
+        for i in 0..max_n {
+            let a_b = main_gate.add(ctx, &a.limb(i), &b.limb(i))?;
+            let sum = main_gate.add(ctx, &a_b, &carrys[i])?;
+            let sum_big = sum.value().map(|f| fe_to_big(*f));
+            let c_val_f = sum_big.clone().map(|b| big_to_fe::<F>(b % &out_base));
+            let carry_f = sum_big.map(|b| big_to_fe::<F>(b >> out_width));
+            let c = range_chip.assign(ctx, c_val_f, Self::sublimb_bit_len(out_width), out_width)?;
+            let carry =
+                range_chip.assign(ctx, carry_f, Self::sublimb_bit_len(out_width), out_width)?;
+            let c_add_carry = main_gate.mul_add(ctx, &carry, &out_base_val, &c)?;
+            main_gate.assert_equal(ctx, &sum, &c_add_carry)?;
+            c_vals.push(c);
+            carrys.push(carry);
+        }
+        let last_carry = AssignedLimb::from(carrys[max_n].clone());
+        let c_limbs = c_vals
+            .into_iter()
+            .map(|v| AssignedLimb::from(v))
+            .collect::<Vec<AssignedLimb<F, Fresh>>>();
+        let sum = AssignedInteger::new(&c_limbs);
+        Ok((sum, last_carry))
+    }
+
+    fn sub(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        let out_width = self.out_width;
+        let max_n = if a.num_limbs() < b.num_limbs() {
+            b.num_limbs()
+        } else {
+            a.num_limbs()
+        };
+        let main_gate = self.main_gate();
+        let range_chip = self.range_chip();
+        let a_big = a.to_big_uint(out_width);
+        let b_big = b.to_big_uint(out_width);
+        let mut c_big = a_big - b_big;
+        let mut c_limbs = Vec::with_capacity(max_n);
+        let out_base = BigUint::from(1usize) << out_width;
+        for _ in 0..max_n {
+            let c_f = c_big.as_ref().map(|b| big_to_fe::<F>(b % &out_base));
+            let c_val = range_chip.assign(ctx, c_f, Self::sublimb_bit_len(out_width), out_width)?;
+            c_limbs.push(AssignedLimb::<_, Fresh>::from(c_val));
+            c_big = c_big.map(|b| b >> out_width);
+        }
+        let c = AssignedInteger::new(&c_limbs);
+        let (added, carry) = self.add(ctx, b, &c)?;
+        main_gate.assert_zero(ctx, &carry.into())?;
+        for i in 0..a.num_limbs() {
+            main_gate.assert_equal(ctx, &a.limb(i), &added.limb(i))?;
+        }
+        //self.assert_equal_fresh(ctx, a, &added)?;
+        Ok(c)
+    }
+
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -579,6 +659,89 @@ mod test {
             }
         };
     }
+
+    impl_bigint_test_circuit!(
+        TestAddCircuit,
+        test_add_circuit,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random add test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let all_sum = &self.a + &self.b;
+                    let carry = &all_sum >> Self::BITS_LEN;
+                    let base = BigUint::from(1usize) << Self::BITS_LEN;
+                    let sum = &all_sum - &carry * &base;
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let sum_assigned_int = bigint_chip.assign_constant_fresh(ctx, sum)?;
+                    let added = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
+                    bigint_chip.assert_equal_fresh(ctx, &sum_assigned_int, &added.0)?;
+                    bigint_chip.main_gate().assert_equal_to_constant(
+                        ctx,
+                        &added.1 .0,
+                        big_to_fe(carry),
+                    )?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestSubCircuit,
+        test_sub_circuit,
+        64,
+        2048,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random sub test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let b: BigUint = &self.b >> 8;
+                    let sub = &self.a - &b;
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let sub_assigned_int = bigint_chip.assign_constant_fresh(ctx, sub)?;
+                    let subed = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
+                    bigint_chip.assert_equal_fresh(ctx, &sub_assigned_int, &subed)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
 
     impl_bigint_test_circuit!(
         TestMulCircuit,

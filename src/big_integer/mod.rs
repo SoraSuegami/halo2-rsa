@@ -69,6 +69,11 @@ impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
     fn limb(&self) -> Value<Limb<F>> {
         self.0.value().map(|value| Limb::new(*value))
     }
+
+    /// Returns the witness value as [`Value<BigUint>`].
+    pub fn to_big_uint(&self, width: usize) -> Value<BigUint> {
+        self.value().map(|f| fe_to_big(f))
+    }
 }
 
 /// Limb that is about to be assigned.
