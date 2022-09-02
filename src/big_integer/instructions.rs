@@ -54,6 +54,15 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Muled>, Error>;
 
+    /// Given a inputs `a`, performs the square `a^2`.
+    fn square(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Muled>, Error> {
+        self.mul(ctx, a, a)
+    }
+
     /// Given two inputs `a,b` and a modulus `n`, performs the modular multiplication `a*b mod n`.
     fn mul_mod(
         &self,
@@ -69,7 +78,9 @@ pub trait BigIntInstructions<F: FieldExt> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
-    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+    ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        self.mul_mod(ctx, a, a, n)
+    }
 
     /// Given a base `a`, a variable exponent `e`, and a modulus `n`, performs the modular power `a^e mod n`.
     fn pow_mod(
@@ -97,7 +108,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    /// Returns an assigned bit repesenting whether `a` and `b` are equivalent, where the range-type is `Fresh`.
+    /// Returns an assigned bit repesenting whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
     fn is_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -105,7 +116,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    ///Returns an assigned bit repesenting whether `a` and `b` are equivalent, where their range-type is `Muled`.
+    ///Returns an assigned bit repesenting whether `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
     fn is_equal_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -130,7 +141,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error>;
 
-    /// Asserts that `a` and `b` are equivalent, whose range-type is `Fresh`.
+    /// Asserts that `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
     fn assert_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -138,7 +149,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error>;
 
-    /// Asserts that `a` and `b` are equivalent, whose range-type is `Muled`.
+    /// Asserts that `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
     fn assert_equal_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,

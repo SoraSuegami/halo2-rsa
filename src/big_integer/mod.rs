@@ -14,18 +14,20 @@ use num_bigint::BigUint;
 pub trait RangeType: Clone {}
 
 /// [`RangeType`] assigned to [`AssignedLimb`] and [`AssignedInteger`] that are not multiplied yet.
+///
+/// The maximum value of each limb of [`Fresh`] type integers is defined in the chip implementing [`BigIntInstructions`] trait.
+/// For example, [`BigIntChip`] has an `out_width` parameter and limits the size of each limb of [`Fresh`] type integers to be less than `2^(out_width)`.
 #[derive(Debug, Clone)]
 pub struct Fresh {}
 impl RangeType for Fresh {}
 
 /// [`RangeType`] assigned to [`AssignedLimb`] and [`AssignedInteger`] that are already multiplied.
+///
+/// The size of each limb of [`Muled`] type integers may overflow that of the [`Fresh`] type integers.
+/// For this reason, we distinguish between these two types of integers.
 #[derive(Debug, Clone)]
 pub struct Muled {}
 impl RangeType for Muled {}
-
-/*#[derive(Debug, Clone)]
-pub struct Regrouped {}
-impl RangeType for Regrouped {}*/
 
 /// An assigned limb of an non native integer.
 #[derive(Debug, Clone)]
@@ -60,12 +62,12 @@ impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
 }
 
 impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
-    /// Given an assigned value constructs new [`AssignedLimb`].
+    /// Constructs new [`AssignedLimb`] from an assigned value.
     fn from(value: AssignedValue<F>) -> Self {
         AssignedLimb::<_, T>(value, PhantomData)
     }
 
-    /// Returns the witness value as  [`Value<Limb<F>>`].
+    /// Returns the witness value as [`Value<Limb<F>>`].
     fn limb(&self) -> Value<Limb<F>> {
         self.0.value().map(|value| Limb::new(*value))
     }
@@ -95,7 +97,7 @@ pub struct UnassignedInteger<F: FieldExt> {
 }
 
 impl<'a, F: FieldExt> From<Vec<F>> for UnassignedInteger<F> {
-    /// Given a vector of witness values [`Vec<F>`], constructs new [`UnassignedInteger`].
+    /// Constructs new [`UnassignedInteger`] from a vector of witness values.
     fn from(value: Vec<F>) -> Self {
         let num_limbs = value.len();
         UnassignedInteger {
