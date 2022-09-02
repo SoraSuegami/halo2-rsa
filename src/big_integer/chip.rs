@@ -487,7 +487,7 @@ impl<F: FieldExt> BigIntChip<F> {
     /// The number of lookup column used in the [`RangeChip`].
     const NUM_LOOKUP_LIMBS: usize = 8;
 
-    /// Create a new ['BigIntChip'] from the configuration and parameters.
+    /// Create a new [`BigIntChip`] from the configuration and parameters.
     pub fn new(config: BigIntConfig, out_width: usize, bits_len: usize) -> Self {
         assert_eq!(bits_len % out_width, 0);
         let num_limbs = bits_len / out_width;
@@ -520,7 +520,7 @@ impl<F: FieldExt> BigIntChip<F> {
         AssignedInteger::new(limbs)
     }
 
-    /// Returns the bit length parameters to configure the [`RangeChip`].
+    /// Returns the bit length parameters necessary to configure the [`RangeChip`].
     pub fn compute_range_lens(out_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
         let out_comp_bit_len = out_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
         let out_overflow_bit_len = out_width % out_comp_bit_len;

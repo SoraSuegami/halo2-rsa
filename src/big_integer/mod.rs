@@ -15,15 +15,15 @@ pub trait RangeType: Clone {}
 
 /// [`RangeType`] assigned to [`AssignedLimb`] and [`AssignedInteger`] that are not multiplied yet.
 ///
-/// The maximum value of each limb of [`Fresh`] type integers is defined in the chip implementing [`BigIntInstructions`] trait.
-/// For example, [`BigIntChip`] has an `out_width` parameter and limits the size of each limb of [`Fresh`] type integers to be less than `2^(out_width)`.
+/// The maximum value of the [`Fresh`] type limb is defined in the chip implementing [`BigIntInstructions`] trait.
+/// For example, [`BigIntChip`] has an `out_width` parameter and limits the size of the [`Fresh`] type limb to be less than `2^(out_width)`.
 #[derive(Debug, Clone)]
 pub struct Fresh {}
 impl RangeType for Fresh {}
 
 /// [`RangeType`] assigned to [`AssignedLimb`] and [`AssignedInteger`] that are already multiplied.
 ///
-/// The size of each limb of [`Muled`] type integers may overflow that of the [`Fresh`] type integers.
+/// The size of the [`Muled`] type limb may overflow that of the [`Fresh`] type limb.
 /// For this reason, we distinguish between these two types of integers.
 #[derive(Debug, Clone)]
 pub struct Muled {}

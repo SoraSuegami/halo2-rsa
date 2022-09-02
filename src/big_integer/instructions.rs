@@ -7,21 +7,21 @@ use super::AssignedLimb;
 
 /// Instructions for big-integer operations.
 pub trait BigIntInstructions<F: FieldExt> {
-    /// Assign a variable integer [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
+    /// Assigns a variable [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: UnassignedInteger<F>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    /// Assign a constant integer [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
+    /// Assigns a constant [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
     fn assign_constant_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    /// Assign a constant integer [`AssignedInteger`] whose [`RangeType`] is [`Muled`].
+    /// Assigns a constant [`AssignedInteger`] whose [`RangeType`] is [`Muled`].
     fn assign_constant_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -46,7 +46,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    /// Given two inputs `a,b`, performs the multiplication `a*b`.
+    /// Given two inputs `a,b`, performs the multiplication `a * b`.
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -63,7 +63,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         self.mul(ctx, a, a)
     }
 
-    /// Given two inputs `a,b` and a modulus `n`, performs the modular multiplication `a*b mod n`.
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular multiplication `a * b mod n`.
     fn mul_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -101,14 +101,14 @@ pub trait BigIntInstructions<F: FieldExt> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
-    /// Returns an assigned bit repesenting whether `a` is zero or not.
+    /// Returns an assigned bit representing whether `a` is zero or not.
     fn is_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    /// Returns an assigned bit repesenting whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
+    /// Returns an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
     fn is_equal_fresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -116,7 +116,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    ///Returns an assigned bit repesenting whether `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
+    ///Returns an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
     fn is_equal_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -126,7 +126,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         n2: usize,
     ) -> Result<AssignedValue<F>, Error>;
 
-    /// Returns an assigned bit repesenting whether `a` is in the order-`n` finite field.
+    /// Returns an assigned bit representing whether `a` is in the order-`n` finite field.
     fn is_in_field(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
