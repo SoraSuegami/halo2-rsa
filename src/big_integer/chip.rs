@@ -151,7 +151,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error> {
-        let limb_width = self.limb_width;
         let n2 = b.num_limbs();
         let max_int = self.max_value(ctx, n2)?;
         let (mut inflated_a, a_carry) = self.add(ctx, a, &max_int)?;
@@ -160,20 +159,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let main_gate = self.main_gate();
         let one = main_gate.assign_bit(ctx, Value::known(F::one()))?;
         let is_not_overflowed = main_gate.is_equal(ctx, &inflated_subed.limb(n2), &one)?;
-        /*let out_base =
-            main_gate.assign_constant(ctx, big_to_fe(BigUint::from(1usize) << limb_width))?;
-        for i in 0..inflated_subed.num_limbs() {
-            inflated_subed
-                .limb(i)
-                .value()
-                .map(|v| println!("i {} val {}", i, fe_to_big(*v)));
-        }
-
-        for i in n2..inflated_subed.num_limbs() {
-            let is_max = main_gate.is_zero(ctx, &inflated_subed.limb(i))?;
-            is_not_overflowed = main_gate.and(ctx, &is_not_overflowed, &is_max)?;
-        }*/
-
         let is_overflowed = main_gate.not(ctx, &is_not_overflowed)?;
         let max_int_limbs = max_int
             .limbs()
@@ -294,7 +279,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         }
         let eq_a = AssignedInteger::new(&eq_a_limbs);
         let eq_b = AssignedInteger::new(&eq_b_limbs);
-        //self.equal_when_carried_regroup(ctx, &eq_a, &eq_b, max_word, limb_width, n - 1)?;
         self.assert_equal_muled(ctx, &eq_a, &eq_b, n1, n2)?;
         Ok(prod_int)
     }
@@ -412,7 +396,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let word_max = Self::compute_mul_word_max(self.limb_width, min_n);
         let limb_width = self.limb_width;
         let num_chunk = n1 + n2 - 1;
-        //self.assert_equal(ctx, a, b, max_word, self.limb_width, n - 1)
         let word_max_width = Self::bits_size(&(&word_max * 2u32));
         let carry_bits = word_max_width - limb_width;
         let main_gate = self.main_gate();
@@ -434,7 +417,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             accumulated_extra =
                 main_gate.add_constant(ctx, &accumulated_extra, big_to_fe(word_max.clone()))?;
             let (q_acc, mod_acc) = self.div_mod_main_gate(ctx, &accumulated_extra, &out_base)?;
-            //main_gate.assert_equal(ctx, &cs[i], &mod_acc)?;
             let cs_acc_eq = main_gate.is_equal(ctx, &cs[i], &mod_acc)?;
             eq_bit = main_gate.and(ctx, &eq_bit, &cs_acc_eq)?;
             accumulated_extra = q_acc;
@@ -458,17 +440,56 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         Ok(eq_bit)
     }
 
+    fn is_less_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        let is_overflowed = self.is_less_than_or_equal(ctx, a, b)?;
+        let is_eq = self.is_equal_fresh(ctx, a, b)?;
+        let is_not_eq = self.main_gate().not(ctx, &is_eq)?;
+        self.main_gate().and(ctx, &is_overflowed, &is_not_eq)
+    }
+
+    fn is_less_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        let (_, is_overflowed) = self.sub(ctx, a, b)?;
+        Ok(is_overflowed)
+    }
+
+    fn is_greater_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        let is_less_than_or_eq = self.is_less_than_or_equal(ctx, a, b)?;
+        self.main_gate().not(ctx, &is_less_than_or_eq)
+    }
+
+    fn is_greater_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error> {
+        let is_less_than = self.is_less_than(ctx, a, b)?;
+        self.main_gate().not(ctx, &is_less_than)
+    }
+
     fn is_in_field(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
-        // Asserts `n-a>0`, i.e. `0<=a<n`.
-        let (sub, is_overflowed) = self.sub(ctx, n, a)?;
-        let is_zero = self.is_zero(ctx, &sub)?;
-        let invalid = self.main_gate().or(ctx, &is_overflowed, &is_zero)?;
-        self.main_gate().not(ctx, &invalid)
+        // Asserts `a<n`, i.e. `0<=a<n`.
+        self.is_less_than(ctx, a, n)
     }
 
     fn assert_zero(
@@ -499,6 +520,46 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         n2: usize,
     ) -> Result<(), Error> {
         let eq_bit = self.is_equal_muled(ctx, a, b, n1, n2)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
+    }
+
+    fn assert_less_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let eq_bit = self.is_less_than(ctx, a, b)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
+    }
+
+    fn assert_less_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let eq_bit = self.is_less_than_or_equal(ctx, a, b)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
+    }
+
+    fn assert_greater_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let eq_bit = self.is_greater_than(ctx, a, b)?;
+        self.main_gate().assert_one(ctx, &eq_bit)
+    }
+
+    fn assert_greater_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error> {
+        let eq_bit = self.is_greater_than_or_equal(ctx, a, b)?;
         self.main_gate().assert_one(ctx, &eq_bit)
     }
 
@@ -1480,6 +1541,302 @@ mod test {
                     let main_gate = bigint_chip.main_gate();
                     main_gate.assert_zero(ctx, &a_is_zero)?;
                     main_gate.assert_one(ctx, &zero_is_zero)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestLessThanCircuit,
+        test_less_than_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_less_than test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = &self.a >> 128;
+                    let b = self.b.clone();
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_less_than(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestBadLessThanCircuit,
+        test_bad_less_than_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_less_than test with an error case",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone();
+                    let b = self.b.clone() >> 128;
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_less_than(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestLessThanOrEqualCircuit,
+        test_less_than_or_equal_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_less_than_or_equal test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone();
+                    let b = self.a.clone();
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_less_than_or_equal(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestBadLessThanOrEqualCircuit,
+        test_bad_less_than_or_equal_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_less_than_or_equal test with an error case",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone();
+                    let b = self.b.clone() >> 128;
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_less_than_or_equal(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestGreaterThanCircuit,
+        test_greater_than_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_greater_than test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone();
+                    let b = self.a.clone() >> 128;
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_greater_than(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestBadGreaterThanCircuit,
+        test_bad_greater_than_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_greater_than test with an error case",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone() >> 128;
+                    let b = self.b.clone();
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_greater_than(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestGreaterThanOrEqualCircuit,
+        test_greater_than_or_equal_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_greater_than_or_equal test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone();
+                    let b = self.a.clone();
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_greater_than_or_equal(ctx, &a_assigned, &b_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestBadGreaterThanOrEqualCircuit,
+        test_bad_greater_than_or_equal_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random assert_greater_than_or_equal test with an error case",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = self.a.clone() >> 128;
+                    let b = self.b.clone();
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    bigint_chip.assert_greater_than_or_equal(ctx, &a_assigned, &b_assigned)?;
                     Ok(())
                 },
             )?;

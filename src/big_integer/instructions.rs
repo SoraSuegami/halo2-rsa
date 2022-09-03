@@ -1,4 +1,4 @@
-use crate::{AssignedInteger, Fresh, Muled, UnassignedInteger};
+use crate::{AssignedInteger, Fresh, Muled, RangeType, UnassignedInteger};
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::{AssignedValue, RegionCtx};
 use num_bigint::BigUint;
@@ -123,7 +123,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    ///Returns an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
+    /// Returns an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
     fn is_equal_muled(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -131,6 +131,38 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Muled>,
         n1: usize,
         n2: usize,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Returns an assigned bit representing whether `a` is less than `b` (`a<b`).
+    fn is_less_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Returns an assigned bit representing whether `a` is less than or equal to `b` (`a<=b`).
+    fn is_less_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Returns an assigned bit representing whether `a` is greater than `b` (`a>b`).
+    fn is_greater_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    /// Returns an assigned bit representing whether `a` is greater than or equal to `b` (`a>=b`).
+    fn is_greater_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error>;
 
     /// Returns an assigned bit representing whether `a` is in the order-`n` finite field.
@@ -164,6 +196,38 @@ pub trait BigIntInstructions<F: FieldExt> {
         b: &AssignedInteger<F, Muled>,
         n1: usize,
         n2: usize,
+    ) -> Result<(), Error>;
+
+    /// Asserts that `a` is less than `b` (`a<b`).
+    fn assert_less_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error>;
+
+    /// Asserts that `a` is less than or equal to `b` (`a<=b`).
+    fn assert_less_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error>;
+
+    /// Asserts that`a` is greater than `b` (`a>b`).
+    fn assert_greater_than(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<(), Error>;
+
+    /// Asserts that `a` is greater than or equal to `b` (`a>=b`).
+    fn assert_greater_than_or_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error>;
 
     /// Asserts that `a` is in the order-`n` finite field.
