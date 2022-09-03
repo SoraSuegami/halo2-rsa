@@ -35,8 +35,8 @@ impl BigIntConfig {
 pub struct BigIntChip<F: FieldExt> {
     /// Chip configuration.
     config: BigIntConfig,
-    /// The width of each limb of the [`Fresh`] type integer in this chip. That is, each limb is an `out_width`-bits integer.
-    out_width: usize,
+    /// The width of each limb of the [`Fresh`] type integer in this chip. That is, each limb is an `limb_width`-bits integer.
+    limb_width: usize,
     /// The default number of limbs in the [`Fresh`] assigned integer in this chip. It can be changed by arithmetic operations (i.e. add, sub, mul).
     num_limbs: usize,
     _f: PhantomData<F>,
@@ -49,13 +49,13 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         integer: UnassignedInteger<F>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let range_gate = self.range_chip();
-        let out_width = self.out_width;
+        let limb_width = self.limb_width;
         let num_limbs = integer.num_limbs();
         assert_eq!(num_limbs, self.num_limbs);
         let values = (0..num_limbs)
             .map(|i| {
                 let limb = integer.limb(i);
-                range_gate.assign(ctx, limb, Self::sublimb_bit_len(out_width), out_width)
+                range_gate.assign(ctx, limb, Self::sublimb_bit_len(limb_width), limb_width)
             })
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
         let limbs = values
@@ -90,7 +90,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let mut limbs = Vec::with_capacity(num_limbs);
         let one = BigUint::from(1usize);
-        let out_base = big_to_fe::<F>((&one << self.out_width) - &one);
+        let out_base = big_to_fe::<F>((&one << self.limb_width) - &one);
         let main_gate = self.main_gate();
         for _ in 0..num_limbs {
             let val = main_gate.assign_constant(ctx, out_base.clone())?;
@@ -105,7 +105,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(AssignedInteger<F, Fresh>, AssignedLimb<F, Fresh>), Error> {
-        let out_width = self.out_width;
+        let limb_width = self.limb_width;
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         let max_n = if n1 < n2 { n2 } else { n1 };
@@ -119,17 +119,18 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let mut c_vals = Vec::with_capacity(max_n);
         let mut carrys = Vec::with_capacity(max_n + 1);
         carrys.push(zero_value);
-        let out_base = BigUint::from(1usize) << out_width;
+        let out_base = BigUint::from(1usize) << limb_width;
         let out_base_val = main_gate.assign_constant(ctx, big_to_fe(out_base.clone()))?;
         for i in 0..max_n {
             let a_b = main_gate.add(ctx, &a.limb(i), &b.limb(i))?;
             let sum = main_gate.add(ctx, &a_b, &carrys[i])?;
             let sum_big = sum.value().map(|f| fe_to_big(*f));
             let c_val_f = sum_big.clone().map(|b| big_to_fe::<F>(b % &out_base));
-            let carry_f = sum_big.map(|b| big_to_fe::<F>(b >> out_width));
-            let c = range_chip.assign(ctx, c_val_f, Self::sublimb_bit_len(out_width), out_width)?;
+            let carry_f = sum_big.map(|b| big_to_fe::<F>(b >> limb_width));
+            let c =
+                range_chip.assign(ctx, c_val_f, Self::sublimb_bit_len(limb_width), limb_width)?;
             let carry =
-                range_chip.assign(ctx, carry_f, Self::sublimb_bit_len(out_width), out_width)?;
+                range_chip.assign(ctx, carry_f, Self::sublimb_bit_len(limb_width), limb_width)?;
             let c_add_carry = main_gate.mul_add(ctx, &carry, &out_base_val, &c)?;
             main_gate.assert_equal(ctx, &sum, &c_add_carry)?;
             c_vals.push(c);
@@ -150,7 +151,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error> {
-        let out_width = self.out_width;
+        let limb_width = self.limb_width;
         let n2 = b.num_limbs();
         let max_int = self.max_value(ctx, n2)?;
         let (mut inflated_a, a_carry) = self.add(ctx, a, &max_int)?;
@@ -160,7 +161,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let one = main_gate.assign_bit(ctx, Value::known(F::one()))?;
         let is_not_overflowed = main_gate.is_equal(ctx, &inflated_subed.limb(n2), &one)?;
         /*let out_base =
-            main_gate.assign_constant(ctx, big_to_fe(BigUint::from(1usize) << out_width))?;
+            main_gate.assign_constant(ctx, big_to_fe(BigUint::from(1usize) << limb_width))?;
         for i in 0..inflated_subed.num_limbs() {
             inflated_subed
                 .limb(i)
@@ -226,14 +227,14 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
-        let out_width = self.out_width;
+        let limb_width = self.limb_width;
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         assert_eq!(n1, n.num_limbs());
         let (a_big, b_big, n_big) = (
-            a.to_big_uint(out_width),
-            b.to_big_uint(out_width),
-            n.to_big_uint(out_width),
+            a.to_big_uint(limb_width),
+            b.to_big_uint(limb_width),
+            n.to_big_uint(limb_width),
         );
         let full_prod_big = a_big * b_big;
         let (mut q_big, mut prod_big) = full_prod_big
@@ -242,15 +243,15 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             .unzip();
         let mut quotients = Vec::new();
         let mut prods = Vec::new();
-        let out_base = BigUint::from(1usize) << out_width;
+        let out_base = BigUint::from(1usize) << limb_width;
         for _ in 0..n2 {
             let q = q_big.as_ref().map(|q| q % &out_base);
-            q_big = q_big.map(|q| q >> out_width);
+            q_big = q_big.map(|q| q >> limb_width);
             quotients.push(q.map(|b| big_to_fe::<F>(b)));
         }
         for _ in 0..n1 {
             let p = prod_big.as_ref().map(|p| p % &out_base);
-            prod_big = prod_big.map(|p| p >> out_width);
+            prod_big = prod_big.map(|p| p >> limb_width);
             prods.push(p.map(|b| big_to_fe::<F>(b)));
         }
         prod_big.map(|b| assert_eq!(b, BigUint::default()));
@@ -259,7 +260,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let range_chip = self.range_chip();
         let quotient_assigns = quotients
             .into_iter()
-            .map(|q| range_chip.assign(ctx, q, Self::sublimb_bit_len(out_width), out_width))
+            .map(|q| range_chip.assign(ctx, q, Self::sublimb_bit_len(limb_width), limb_width))
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
         let quotient_limbs = quotient_assigns
             .into_iter()
@@ -267,7 +268,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             .collect::<Vec<AssignedLimb<_, _>>>();
         let prod_assigns = prods
             .into_iter()
-            .map(|p| range_chip.assign(ctx, p, Self::sublimb_bit_len(out_width), out_width))
+            .map(|p| range_chip.assign(ctx, p, Self::sublimb_bit_len(limb_width), limb_width))
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
         let prod_limbs = prod_assigns
             .into_iter()
@@ -293,7 +294,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         }
         let eq_a = AssignedInteger::new(&eq_a_limbs);
         let eq_b = AssignedInteger::new(&eq_b_limbs);
-        //self.equal_when_carried_regroup(ctx, &eq_a, &eq_b, max_word, out_width, n - 1)?;
+        //self.equal_when_carried_regroup(ctx, &eq_a, &eq_b, max_word, limb_width, n - 1)?;
         self.assert_equal_muled(ctx, &eq_a, &eq_b, n1, n2)?;
         Ok(prod_int)
     }
@@ -408,15 +409,15 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<AssignedValue<F>, Error> {
         let min_n = if n2 >= n1 { n1 } else { n2 };
         //let n = n1 + n2;
-        let word_max = Self::compute_mul_word_max(self.out_width, min_n);
-        let out_width = self.out_width;
+        let word_max = Self::compute_mul_word_max(self.limb_width, min_n);
+        let limb_width = self.limb_width;
         let num_chunk = n1 + n2 - 1;
-        //self.assert_equal(ctx, a, b, max_word, self.out_width, n - 1)
+        //self.assert_equal(ctx, a, b, max_word, self.limb_width, n - 1)
         let word_max_width = Self::bits_size(&(&word_max * 2u32));
-        let carry_bits = word_max_width - out_width;
+        let carry_bits = word_max_width - limb_width;
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
-        let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << out_width))?;
+        let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << limb_width))?;
         let mut accumulated_extra = main_gate.assign_constant(ctx, F::zero())?;
         let mut carry = Vec::with_capacity(num_chunk);
         let mut cs = Vec::with_capacity(num_chunk);
@@ -517,14 +518,14 @@ impl<F: FieldExt> BigIntChip<F> {
     const NUM_LOOKUP_LIMBS: usize = 8;
 
     /// Create a new [`BigIntChip`] from the configuration and parameters.
-    pub fn new(config: BigIntConfig, out_width: usize, bits_len: usize) -> Self {
-        assert_eq!(bits_len % out_width, 0);
-        let num_limbs = bits_len / out_width;
-        let max_word = Self::compute_mul_word_max(out_width, num_limbs);
+    pub fn new(config: BigIntConfig, limb_width: usize, bits_len: usize) -> Self {
+        assert_eq!(bits_len % limb_width, 0);
+        let num_limbs = bits_len / limb_width;
+        let max_word = Self::compute_mul_word_max(limb_width, num_limbs);
         assert!(Self::bits_size(&max_word) <= F::NUM_BITS as usize);
         BigIntChip {
             config,
-            out_width,
+            limb_width,
             num_limbs,
             _f: PhantomData,
         }
@@ -550,21 +551,21 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     /// Returns the bit length parameters necessary to configure the [`RangeChip`].
-    pub fn compute_range_lens(out_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
-        let out_comp_bit_len = out_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
-        let out_overflow_bit_len = out_width % out_comp_bit_len;
+    pub fn compute_range_lens(limb_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
+        let out_comp_bit_len = limb_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
+        let out_overflow_bit_len = limb_width % out_comp_bit_len;
         let one = BigUint::from(1usize);
-        let out_base = BigUint::from(1usize) << out_width;
+        let out_base = BigUint::from(1usize) << limb_width;
 
         let fresh_word_max_width = (2u32 * &out_base).bits() as usize;
-        let fresh_carry_bits = fresh_word_max_width - out_width;
+        let fresh_carry_bits = fresh_word_max_width - limb_width;
         let fresh_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(fresh_carry_bits);
         let fresh_carry_overflow_bit_len = fresh_carry_bits % fresh_carry_comp_bit_len;
 
         let mul_word_max =
             BigUint::from(num_limbs) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one);
         let mul_word_max_width = (&mul_word_max * 2u32).bits() as usize;
-        let mul_carry_bits = mul_word_max_width - out_width;
+        let mul_carry_bits = mul_word_max_width - limb_width;
         let mul_carry_comp_bit_len = BigIntChip::<F>::sublimb_bit_len(mul_carry_bits);
         let mul_carry_overflow_bit_len = mul_carry_bits % mul_carry_comp_bit_len;
 
@@ -588,16 +589,16 @@ impl<F: FieldExt> BigIntChip<F> {
         integer: BigUint,
         max_num_limbs: usize,
     ) -> Result<AssignedInteger<F, T>, Error> {
-        let out_width = self.out_width;
+        let limb_width = self.limb_width;
         let int_bits_size = Self::bits_size(&integer);
-        let is_fit = int_bits_size % out_width == 0;
+        let is_fit = int_bits_size % limb_width == 0;
         let num_limbs = if is_fit {
-            int_bits_size / out_width
+            int_bits_size / limb_width
         } else {
-            int_bits_size / out_width + 1
+            int_bits_size / limb_width + 1
         };
         assert!(num_limbs <= max_num_limbs);
-        let limbs = decompose_big::<F>(integer, num_limbs, out_width);
+        let limbs = decompose_big::<F>(integer, num_limbs, limb_width);
         let main_gate = self.main_gate();
         let mut assigned_limbs: Vec<AssignedLimb<F, T>> = Vec::with_capacity(num_limbs);
 
@@ -619,7 +620,7 @@ impl<F: FieldExt> BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
-        let out_width = self.out_width;
+        let limb_width = self.limb_width;
         let max_n = if a.num_limbs() < b.num_limbs() {
             b.num_limbs()
         } else {
@@ -627,16 +628,17 @@ impl<F: FieldExt> BigIntChip<F> {
         };
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
-        let a_big = a.to_big_uint(out_width);
-        let b_big = b.to_big_uint(out_width);
+        let a_big = a.to_big_uint(limb_width);
+        let b_big = b.to_big_uint(limb_width);
         let mut c_big = a_big - b_big;
         let mut c_limbs = Vec::with_capacity(max_n);
-        let out_base = BigUint::from(1usize) << out_width;
+        let out_base = BigUint::from(1usize) << limb_width;
         for _ in 0..max_n {
             let c_f = c_big.as_ref().map(|b| big_to_fe::<F>(b % &out_base));
-            let c_val = range_chip.assign(ctx, c_f, Self::sublimb_bit_len(out_width), out_width)?;
+            let c_val =
+                range_chip.assign(ctx, c_f, Self::sublimb_bit_len(limb_width), limb_width)?;
             c_limbs.push(AssignedLimb::<_, Fresh>::from(c_val));
-            c_big = c_big.map(|b| b >> out_width);
+            c_big = c_big.map(|b| b >> limb_width);
         }
         let c = AssignedInteger::new(&c_limbs);
         let (added, carry) = self.add(ctx, b, &c)?;
@@ -691,9 +693,9 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     /// Returns the maximum limb size of [`Muled`] type integers.
-    fn compute_mul_word_max(out_width: usize, min_n: usize) -> BigUint {
+    fn compute_mul_word_max(limb_width: usize, min_n: usize) -> BigUint {
         let one = BigUint::from(1usize);
-        let out_base = BigUint::from(1usize) << out_width;
+        let out_base = BigUint::from(1usize) << limb_width;
         BigUint::from(min_n) * (&out_base - &one) * (&out_base - &one) + (&out_base - &one)
     }
 }
@@ -709,7 +711,7 @@ mod test {
     };
 
     macro_rules! impl_bigint_test_circuit {
-        ($circuit_name:ident, $test_fn_name:ident, $out_width:expr, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
+        ($circuit_name:ident, $test_fn_name:ident, $limb_width:expr, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
             #[derive(Clone, Debug)]
             struct $circuit_name<F: FieldExt> {
                 a: BigUint,
@@ -719,10 +721,10 @@ mod test {
             }
 
             impl<F: FieldExt> $circuit_name<F> {
-                const OUT_WIDTH: usize = $out_width;
+                const LIMB_WIDTH: usize = $limb_width;
                 const BITS_LEN: usize = $bits_len;
                 fn bigint_chip(&self, config: BigIntConfig) -> BigIntChip<F> {
-                    BigIntChip::new(config, Self::OUT_WIDTH, Self::BITS_LEN)
+                    BigIntChip::new(config, Self::LIMB_WIDTH, Self::BITS_LEN)
                 }
             }
 
@@ -738,8 +740,8 @@ mod test {
                     let main_gate_config = MainGate::<F>::configure(meta);
                     let (composition_bit_lens, overflow_bit_lens) =
                         BigIntChip::<F>::compute_range_lens(
-                            Self::OUT_WIDTH,
-                            Self::BITS_LEN / Self::OUT_WIDTH,
+                            Self::LIMB_WIDTH,
+                            Self::BITS_LEN / Self::LIMB_WIDTH,
                         );
                     let range_config = RangeChip::<F>::configure(
                         meta,
@@ -822,7 +824,7 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random add test",
                 |mut region| {
@@ -832,9 +834,9 @@ mod test {
                     let carry = &all_sum >> Self::BITS_LEN;
                     let base = BigUint::from(1usize) << Self::BITS_LEN;
                     let sum = &all_sum - &carry * &base;
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -868,15 +870,15 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random add test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -904,7 +906,7 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub test",
                 |mut region| {
@@ -912,9 +914,9 @@ mod test {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let b: BigUint = &self.b >> 8;
                     let sub = &self.a - &b;
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -944,7 +946,7 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub test with an overflow case",
                 |mut region| {
@@ -952,9 +954,9 @@ mod test {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let a = &self.a >> 1024;
                     let b: BigUint = self.b.clone();
-                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -982,16 +984,16 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let b: BigUint = &self.b >> 8;
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -1020,15 +1022,15 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random mul test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -1055,15 +1057,15 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_muled test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -1098,7 +1100,7 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_muled test with an error case",
                 |mut region| {
@@ -1106,9 +1108,9 @@ mod test {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     assert!(self.a != BigUint::from(0usize));
                     assert!(self.b != BigUint::from(0usize));
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -1148,15 +1150,15 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_fresh test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a1_unassigned = UnassignedInteger::from(a1_limbs);
-                    let a2_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a2_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a2_unassigned = UnassignedInteger::from(a2_limbs);
                     let a1_assigned = bigint_chip.assign_integer(ctx, a1_unassigned)?;
                     let a2_assigned = bigint_chip.assign_integer(ctx, a2_unassigned)?;
@@ -1183,14 +1185,14 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_fresh test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     assert!(self.a != BigUint::from(0usize));
-                    let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a1_unassigned = UnassignedInteger::from(a1_limbs);
                     let a1_assigned = bigint_chip.assign_integer(ctx, a1_unassigned)?;
                     let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
@@ -1217,17 +1219,17 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random mul_mod test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -1257,17 +1259,17 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random mul_mod test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
@@ -1296,18 +1298,18 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 5;
                     let e: BigUint =
                         self.b.clone() & ((BigUint::from(1usize) << e_bit) - BigUint::from(1usize));
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let e_assigned = bigint_chip.assign_constant(ctx, e.clone(), 1)?;
@@ -1339,18 +1341,18 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 5;
                     let e: BigUint =
                         self.b.clone() & ((BigUint::from(1usize) << e_bit) - BigUint::from(1usize));
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let e_assigned = bigint_chip.assign_constant(ctx, e.clone(), 1)?;
@@ -1381,18 +1383,18 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 7;
                     let e: BigUint =
                         self.b.clone() & ((BigUint::from(1usize) << e_bit) - BigUint::from(1usize));
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
@@ -1422,18 +1424,18 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 7;
                     let e: BigUint =
                         self.b.clone() & ((BigUint::from(1usize) << e_bit) - BigUint::from(1usize));
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
@@ -1462,14 +1464,14 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random is_zero test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     assert!(self.a != BigUint::from(0usize));
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
@@ -1500,16 +1502,16 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_in_field test",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     bigint_chip.assert_in_field(ctx, &a_assigned, &n_assigned)?;
@@ -1537,13 +1539,13 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_in_field test with an error case",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     bigint_chip.assert_in_field(ctx, &n_assigned, &n_assigned)?;
@@ -1608,7 +1610,7 @@ mod test {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big =
                         BigUint::from(1usize) + 0usize * &out_base + 3usize * &out_base * &out_base;
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
@@ -1651,7 +1653,7 @@ mod test {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big =
                         BigUint::from(3usize) + 4usize * &out_base + 5usize * &out_base.pow(2) + 6usize * &out_base.pow(3);
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
@@ -1691,7 +1693,7 @@ mod test {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big = BigUint::from(4819187580044832333u128)
                         + 9183764011217009606u128 * &out_base
                         + 11426964127496009747u128 * &out_base.pow(2)
@@ -1802,7 +1804,7 @@ mod test {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big = BigUint::from(1usize) + 1usize * &out_base;
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
                     let n1 = a_assigned.num_limbs();
@@ -1844,7 +1846,7 @@ mod test {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let out_base = BigUint::from(1usize) << Self::OUT_WIDTH;
+                    let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big = BigUint::from(1usize) + 7usize * &out_base;
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
                     let n1 = a_assigned.num_limbs();
@@ -1881,7 +1883,7 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "0 * (random) = 0 mod n",
                 |mut region| {
@@ -1890,10 +1892,10 @@ mod test {
                     let zero_big = BigUint::from(0usize);
                     let a_big = zero_big.clone();
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
-                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     let ab = bigint_chip.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
@@ -1922,18 +1924,18 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "n * 1 mod n = 0",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let a_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_big = BigUint::from(1usize);
                     let b_assigned = bigint_chip.assign_constant_fresh(ctx, b_big)?;
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     let ab = bigint_chip.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
@@ -1962,20 +1964,20 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "(n - 1) * (n - 1) mod n = 1",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let n_sub_1 = &self.n - &1u8;
-                    let a_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-                    let b_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     let ab = bigint_chip.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
@@ -2004,21 +2006,21 @@ mod test {
             mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
         ) -> Result<(), Error> {
             let bigint_chip = self.bigint_chip(config);
-            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "(n - 1) * (n - 2) mod n = 2",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let n_sub_1 = &self.n - &1u8;
-                    let a_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::OUT_WIDTH);
+                    let a_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let n_sub_2 = &self.n - &2u8;
-                    let b_limbs = decompose_big::<F>(n_sub_2.clone(), num_limbs, Self::OUT_WIDTH);
+                    let b_limbs = decompose_big::<F>(n_sub_2.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::OUT_WIDTH);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
                     let ab = bigint_chip.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
