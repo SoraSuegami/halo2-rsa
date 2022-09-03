@@ -1,7 +1,9 @@
 //! A module for big-integer operations.
+//!
+//!
 mod chip;
 mod instructions;
-use std::{marker::PhantomData, ops::Mul};
+use std::marker::PhantomData;
 
 pub use chip::*;
 pub use instructions::*;
@@ -47,34 +49,30 @@ impl<F: FieldExt, T: RangeType> From<&AssignedLimb<F, T>> for AssignedValue<F> {
     }
 }
 
-impl<F: FieldExt> AssignedLimb<F, Fresh> {
-    /// Converts the [`RangeType`] from [`Fresh`] to [`Muled`].
-    pub fn to_muled(self) -> AssignedLimb<F, Muled> {
-        AssignedLimb::<F, Muled>(self.0, PhantomData)
-    }
-}
-
-impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
-    /// Returns the witness value as [`Value<F>`].
-    fn value(&self) -> Value<F> {
-        self.0.value().cloned()
-    }
-}
-
 impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
     /// Constructs new [`AssignedLimb`] from an assigned value.
-    fn from(value: AssignedValue<F>) -> Self {
+    pub fn from(value: AssignedValue<F>) -> Self {
         AssignedLimb::<_, T>(value, PhantomData)
     }
 
     /// Returns the witness value as [`Value<Limb<F>>`].
-    fn limb(&self) -> Value<Limb<F>> {
+    pub fn limb(&self) -> Value<Limb<F>> {
         self.0.value().map(|value| Limb::new(*value))
     }
 
+    /// Returns the witness value as [`Value<F>`].
+    pub fn value(&self) -> Value<F> {
+        self.0.value().cloned()
+    }
+
     /// Returns the witness value as [`Value<BigUint>`].
-    pub fn to_big_uint(&self, width: usize) -> Value<BigUint> {
+    pub fn to_big_uint(&self) -> Value<BigUint> {
         self.value().map(|f| fe_to_big(f))
+    }
+
+    /// Converts the [`RangeType`] from [`Fresh`] to [`Muled`].
+    pub fn to_muled(self) -> AssignedLimb<F, Muled> {
+        AssignedLimb::<F, Muled>(self.0, PhantomData)
     }
 }
 

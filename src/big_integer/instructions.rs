@@ -1,4 +1,4 @@
-use crate::{AssignedInteger, Fresh, Muled, RangeType, UnassignedInteger};
+use crate::{AssignedInteger, Fresh, Muled, UnassignedInteger};
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::{AssignedValue, RegionCtx};
 use num_bigint::BigUint;
@@ -30,6 +30,13 @@ pub trait BigIntInstructions<F: FieldExt> {
         n2: usize,
     ) -> Result<AssignedInteger<F, Muled>, Error>;
 
+    /// Returns the maximum integer.
+    fn max_value(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        num_limbs: usize,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
     /// Given two inputs `a,b`, performs the addition `a + b`.
     fn add(
         &self,
@@ -44,7 +51,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
-    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+    ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error>;
 
     /// Given two inputs `a,b`, performs the multiplication `a * b`.
     fn mul(

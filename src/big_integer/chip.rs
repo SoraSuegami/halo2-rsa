@@ -5,7 +5,7 @@ use crate::{
 };
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 use maingate::{
-    big_to_fe, decompose_big, fe_to_big, modulus, AssignedValue, MainGate, MainGateConfig,
+    big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
 };
 
@@ -83,6 +83,22 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         self.assign_constant(ctx, integer, n1 + n2 - 1)
     }
 
+    fn max_value(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        num_limbs: usize,
+    ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        let mut limbs = Vec::with_capacity(num_limbs);
+        let one = BigUint::from(1usize);
+        let out_base = big_to_fe::<F>((&one << self.out_width) - &one);
+        let main_gate = self.main_gate();
+        for _ in 0..num_limbs {
+            let val = main_gate.assign_constant(ctx, out_base.clone())?;
+            limbs.push(AssignedLimb::from(val));
+        }
+        Ok(AssignedInteger::new(&limbs))
+    }
+
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -133,31 +149,43 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
-    ) -> Result<AssignedInteger<F, Fresh>, Error> {
+    ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error> {
         let out_width = self.out_width;
-        let max_n = if a.num_limbs() < b.num_limbs() {
-            b.num_limbs()
-        } else {
-            a.num_limbs()
-        };
+        let n2 = b.num_limbs();
+        let max_int = self.max_value(ctx, n2)?;
+        let (mut inflated_a, a_carry) = self.add(ctx, a, &max_int)?;
+        inflated_a.0.push(a_carry);
+        let inflated_subed = self.sub_unchecked(ctx, &inflated_a, b)?;
         let main_gate = self.main_gate();
-        let range_chip = self.range_chip();
-        let a_big = a.to_big_uint(out_width);
-        let b_big = b.to_big_uint(out_width);
-        let mut c_big = a_big - b_big;
-        let mut c_limbs = Vec::with_capacity(max_n);
-        let out_base = BigUint::from(1usize) << out_width;
-        for _ in 0..max_n {
-            let c_f = c_big.as_ref().map(|b| big_to_fe::<F>(b % &out_base));
-            let c_val = range_chip.assign(ctx, c_f, Self::sublimb_bit_len(out_width), out_width)?;
-            c_limbs.push(AssignedLimb::<_, Fresh>::from(c_val));
-            c_big = c_big.map(|b| b >> out_width);
+        let one = main_gate.assign_bit(ctx, Value::known(F::one()))?;
+        let is_not_overflowed = main_gate.is_equal(ctx, &inflated_subed.limb(n2), &one)?;
+        /*let out_base =
+            main_gate.assign_constant(ctx, big_to_fe(BigUint::from(1usize) << out_width))?;
+        for i in 0..inflated_subed.num_limbs() {
+            inflated_subed
+                .limb(i)
+                .value()
+                .map(|v| println!("i {} val {}", i, fe_to_big(*v)));
         }
-        let c = AssignedInteger::new(&c_limbs);
-        let (added, carry) = self.add(ctx, b, &c)?;
-        main_gate.assert_zero(ctx, &carry.into())?;
-        self.assert_equal_fresh(ctx, a, &added)?;
-        Ok(c)
+
+        for i in n2..inflated_subed.num_limbs() {
+            let is_max = main_gate.is_zero(ctx, &inflated_subed.limb(i))?;
+            is_not_overflowed = main_gate.and(ctx, &is_not_overflowed, &is_max)?;
+        }*/
+
+        let is_overflowed = main_gate.not(ctx, &is_not_overflowed)?;
+        let max_int_limbs = max_int
+            .limbs()
+            .into_iter()
+            .map(|limb| main_gate.mul(ctx, &is_not_overflowed, &limb.0))
+            .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
+        let max_int_limbs = max_int_limbs
+            .into_iter()
+            .map(|v| AssignedLimb::from(v))
+            .collect::<Vec<AssignedLimb<F, Fresh>>>();
+        let sel_max_int = AssignedInteger::new(&max_int_limbs);
+        let real_subed = self.sub_unchecked(ctx, &inflated_subed, &sel_max_int)?;
+        Ok((real_subed, is_overflowed))
     }
 
     fn mul(
@@ -436,9 +464,10 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
         // Asserts `n-a>0`, i.e. `0<=a<n`.
-        let sub = self.sub(ctx, n, a)?;
+        let (sub, is_overflowed) = self.sub(ctx, n, a)?;
         let is_zero = self.is_zero(ctx, &sub)?;
-        self.main_gate().not(ctx, &is_zero)
+        let invalid = self.main_gate().or(ctx, &is_overflowed, &is_zero)?;
+        self.main_gate().not(ctx, &invalid)
     }
 
     fn assert_zero(
@@ -581,6 +610,39 @@ impl<F: FieldExt> BigIntChip<F> {
             assigned_limbs.push(zero.clone());
         }
         Ok(AssignedInteger::new(&assigned_limbs))
+    }
+
+    /// Given two inputs `a,b` (`a>=b`), performs the subtraction `a - b`.
+    fn sub_unchecked(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        let out_width = self.out_width;
+        let max_n = if a.num_limbs() < b.num_limbs() {
+            b.num_limbs()
+        } else {
+            a.num_limbs()
+        };
+        let main_gate = self.main_gate();
+        let range_chip = self.range_chip();
+        let a_big = a.to_big_uint(out_width);
+        let b_big = b.to_big_uint(out_width);
+        let mut c_big = a_big - b_big;
+        let mut c_limbs = Vec::with_capacity(max_n);
+        let out_base = BigUint::from(1usize) << out_width;
+        for _ in 0..max_n {
+            let c_f = c_big.as_ref().map(|b| big_to_fe::<F>(b % &out_base));
+            let c_val = range_chip.assign(ctx, c_f, Self::sublimb_bit_len(out_width), out_width)?;
+            c_limbs.push(AssignedLimb::<_, Fresh>::from(c_val));
+            c_big = c_big.map(|b| b >> out_width);
+        }
+        let c = AssignedInteger::new(&c_limbs);
+        let (added, carry) = self.add(ctx, b, &c)?;
+        main_gate.assert_zero(ctx, &carry.into())?;
+        self.assert_equal_fresh(ctx, a, &added)?;
+        Ok(c)
     }
 
     /// Given a integer `a` and a divisor `n`, performs `a/n` and `a mod n`.
@@ -857,8 +919,47 @@ mod test {
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
                     let sub_assigned_int = bigint_chip.assign_constant_fresh(ctx, sub)?;
-                    let subed = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
+                    let (subed, is_overflowed) = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
                     bigint_chip.assert_equal_fresh(ctx, &sub_assigned_int, &subed)?;
+                    bigint_chip.main_gate().assert_zero(ctx, &is_overflowed)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestOverflowSubCircuit,
+        test_overflow_sub_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::OUT_WIDTH;
+            layouter.assign_region(
+                || "random sub test with an overflow case",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a = &self.a >> 1024;
+                    let b: BigUint = self.b.clone();
+                    let a_limbs = decompose_big::<F>(a, num_limbs, Self::OUT_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(b, num_limbs, Self::OUT_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let (_, is_overflowed) = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
+                    bigint_chip.main_gate().assert_one(ctx, &is_overflowed)?;
                     Ok(())
                 },
             )?;
@@ -895,7 +996,7 @@ mod test {
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
                     let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
-                    let subed = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
+                    let (subed, _) = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
                     bigint_chip.assert_equal_fresh(ctx, &zero, &subed)?;
                     Ok(())
                 },
