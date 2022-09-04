@@ -26,11 +26,11 @@ pub trait BigIntInstructions<F: FieldExt> {
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
-        n1: usize,
-        n2: usize,
+        num_limbs_l: usize,
+        num_limbs_r: usize,
     ) -> Result<AssignedInteger<F, Muled>, Error>;
 
-    /// Returns the maximum integer.
+    /// Assigns the maximum integer whose number of limbs is `num_limbs`.
     fn max_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -66,9 +66,25 @@ pub trait BigIntInstructions<F: FieldExt> {
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
-    ) -> Result<AssignedInteger<F, Muled>, Error> {
-        self.mul(ctx, a, a)
-    }
+    ) -> Result<AssignedInteger<F, Muled>, Error>;
+
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular addition `a + b mod n`.
+    fn add_mod(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular subtraction `a - b mod n`.
+    fn sub_mod(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Fresh>,
+        b: &AssignedInteger<F, Fresh>,
+        n: &AssignedInteger<F, Fresh>,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
     /// Given two inputs `a,b` and a modulus `n`, performs the modular multiplication `a * b mod n`.
     fn mul_mod(
@@ -85,9 +101,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
-    ) -> Result<AssignedInteger<F, Fresh>, Error> {
-        self.mul_mod(ctx, a, a, n)
-    }
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
     /// Given a base `a`, a variable exponent `e`, and a modulus `n`, performs the modular power `a^e mod n`.
     fn pow_mod(
@@ -129,8 +143,8 @@ pub trait BigIntInstructions<F: FieldExt> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Muled>,
         b: &AssignedInteger<F, Muled>,
-        n1: usize,
-        n2: usize,
+        num_limbs_l: usize,
+        num_limbs_r: usize,
     ) -> Result<AssignedValue<F>, Error>;
 
     /// Returns an assigned bit representing whether `a` is less than `b` (`a<b`).
