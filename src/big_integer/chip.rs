@@ -22,6 +22,13 @@ pub struct BigIntConfig {
 
 impl BigIntConfig {
     /// Creates new [`BigIntConfig`] from [`RangeConfig`] and [`MainGateConfig`].
+    ///
+    /// # Arguments
+    /// * range_config - a configuration for [`RangeChip`].
+    /// * main_gate_config - a configuration for [`MainGate`].
+    ///
+    /// # Return values
+    /// Returns new [`BigIntConfig`].
     pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
         Self {
             range_config,
@@ -35,9 +42,9 @@ impl BigIntConfig {
 pub struct BigIntChip<F: FieldExt> {
     /// Chip configuration.
     config: BigIntConfig,
-    /// The width of each limb of the [`Fresh`] type integer in this chip. That is, each limb is an `limb_width`-bits integer.
+    /// The width of each limb of the [`Fresh`] type integer in this chip. That is, the limb is an `limb_width`-bits integer.
     limb_width: usize,
-    /// The default number of limbs in the [`Fresh`] assigned integer in this chip. It can be changed by arithmetic operations (i.e. add, sub, mul).
+    /// The default number of limbs in the [`Fresh`] assigned integer in this chip. It can be changed by arithmetic operations (e.g. `add`, `sub`, `mul`).
     num_limbs: usize,
     _f: PhantomData<F>,
 }
@@ -692,18 +699,18 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         //let n = n1 + n2;
         let word_max = Self::compute_mul_word_max(self.limb_width, min_n);
         let limb_width = self.limb_width;
-        let num_chunk = num_limbs_l + num_limbs_r - 1;
+        let num_limbs = num_limbs_l + num_limbs_r - 1;
         let word_max_width = Self::bits_size(&(&word_max * 2u32));
         let carry_bits = word_max_width - limb_width;
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
         let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << limb_width))?;
         let mut accumulated_extra = main_gate.assign_constant(ctx, F::zero())?;
-        let mut carry = Vec::with_capacity(num_chunk);
-        let mut cs = Vec::with_capacity(num_chunk);
+        let mut carry = Vec::with_capacity(num_limbs);
+        let mut cs = Vec::with_capacity(num_limbs);
         carry.push(main_gate.assign_constant(ctx, F::zero())?);
         let mut eq_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
-        for i in 0..num_chunk {
+        for i in 0..num_limbs {
             let a_b = main_gate.sub(ctx, &a.limb(i), &b.limb(i))?;
             let sum =
                 main_gate.add_with_constant(ctx, &a_b, &carry[i], big_to_fe(word_max.clone()))?;
@@ -718,7 +725,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             eq_bit = main_gate.and(ctx, &eq_bit, &cs_acc_eq)?;
             accumulated_extra = q_acc;
 
-            if i < num_chunk - 1 {
+            if i < num_limbs - 1 {
                 let carry_value = carry[i + 1].value().copied();
                 let range_assigned = range_chip.assign(
                     ctx,
@@ -1002,6 +1009,14 @@ impl<F: FieldExt> BigIntChip<F> {
     const NUM_LOOKUP_LIMBS: usize = 8;
 
     /// Create a new [`BigIntChip`] from the configuration and parameters.
+    ///
+    /// # Arguments
+    /// * config - a configuration for [`BigIntChip`].
+    /// * limb_width - the bit length of [`Fresh`] type limbs in this chip.
+    /// * bits_len - the default bit length of [`Fresh`] type integers in this chip.
+    ///
+    /// # Return values
+    /// Returns a new [`BigIntChip`]
     pub fn new(config: BigIntConfig, limb_width: usize, bits_len: usize) -> Self {
         assert_eq!(bits_len % limb_width, 0);
         let num_limbs = bits_len / limb_width;
@@ -1027,6 +1042,12 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     /// Creates a new [`AssignedInteger`] from its limb representation.
+    ///
+    /// # Arguments
+    /// * limbs - the assigned limbs of the integer.
+    ///
+    /// # Return values
+    /// Returns a new [`AssignedInteger`]
     pub(crate) fn new_assigned_integer<T: RangeType>(
         &self,
         limbs: &[AssignedLimb<F, T>],
@@ -1035,6 +1056,13 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     /// Returns the bit length parameters necessary to configure the [`RangeChip`].
+    ///
+    /// # Arguments
+    /// * limb_width - the bit length of [`Fresh`] limbs.
+    /// * num_limbs - the default number of limbs of [`Fresh`] integers.
+    ///
+    /// # Return values
+    /// Returns a vector of composition bit lengthes (`composition_bit_lens`) and a vector of overflow bit lengthes (`overflow_bit_lens`), which are necessary for [`RangeConfig`].
     pub fn compute_range_lens(limb_width: usize, num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
         let out_comp_bit_len = limb_width / BigIntChip::<F>::NUM_LOOKUP_LIMBS;
         let out_overflow_bit_len = limb_width % out_comp_bit_len;
@@ -1098,6 +1126,8 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     /// Given two inputs `a,b` (`a>=b`), performs the subtraction `a - b`.
+    /// # Panics
+    /// Panics if `a<b`.
     fn sub_unchecked(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1132,6 +1162,8 @@ impl<F: FieldExt> BigIntChip<F> {
     }
 
     /// Given a integer `a` and a divisor `n`, performs `a/n` and `a mod n`.
+    /// # Panics
+    /// Panics if `n=0`.
     fn div_mod_main_gate(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1273,8 +1305,8 @@ mod test {
                 use halo2wrong::curves::bn256::Fq as BnFq;
                 use halo2wrong::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
                 run::<BnFq>();
-                //run::<PastaFp>();
-                //run::<PastaFq>();
+                run::<PastaFp>();
+                run::<PastaFq>();
             }
         };
     }

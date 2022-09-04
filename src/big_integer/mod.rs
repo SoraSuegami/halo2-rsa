@@ -1,6 +1,6 @@
 //! A module for big integer operations.
 //!
-//! A chip in this module, [`BigIntChip`], defines computations for big integers, i.e. integers whose size is larger than that of the native field of the arithmetic circuit.
+//! A chip in this module, [`BigIntChip`], defines constraints for big integers, i.e. integers whose size is larger than that of the native field of the arithmetic circuit.
 //! The big integer consists of multiple values in the native field, and these values are called limbs.
 //! The assigned limb and integer, [`AssignedLimb`] and [`AssignedInteger`], have one of the following two range types: [`Fresh`] and [`Muled`].
 //! The [`Fresh`] type is allocated to the integers that are not multiplied yet, and the [`Muled`] type is allocated after they are multiplied.
