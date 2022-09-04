@@ -1,5 +1,5 @@
 [package]
-name = "halo2_rsa"
+name = "halo2-rsa"
 version = "0.1.0"
 edition = "2021"
 authors = ["Sora Suegami"]
