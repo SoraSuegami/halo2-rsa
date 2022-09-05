@@ -11,6 +11,8 @@ use maingate::{
 
 use num_bigint::BigUint;
 
+use super::RefreshAux;
+
 /// Configuration for [`BigIntChip`].
 #[derive(Clone, Debug)]
 pub struct BigIntConfig {
@@ -149,6 +151,67 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             limbs.push(AssignedLimb::from(val));
         }
         Ok(AssignedInteger::new(&limbs))
+    }
+
+    /// Converts a [`Muled`] type integer to a [`Fresh`] type integer.
+    ///
+    /// # Arguments
+    /// * `ctx` - a region context.
+    /// * `a` - an assigned integer whose type is [`AssignedInteger<F, Muled>`].
+    /// * `aux` - auxiliary data for refreshing a [`Muled`] type integer to a [`Fresh`] type integer.
+    ///
+    /// # Return values
+    /// Returns a refreshed `a` whose type is [`AssignedInteger<F, Fresh>`].
+    fn refresh(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Muled>,
+        aux: &RefreshAux,
+    ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        assert_eq!(self.limb_width, aux.limb_width);
+        let increased_limbs_vec = aux.increased_limbs_vec.clone();
+        let num_limbs_l = aux.num_limbs_l;
+        let num_limbs_r = aux.num_limbs_r;
+        assert_eq!(a.num_limbs(), num_limbs_l + num_limbs_r - 1);
+        let num_limbs_fresh = increased_limbs_vec.len();
+
+        let main_gate = self.main_gate();
+        let zero_val = main_gate.assign_constant(ctx, F::zero())?;
+        let mut refreshed_limbs = Vec::with_capacity(num_limbs_fresh);
+        for i in 0..a.num_limbs() {
+            refreshed_limbs.push(a.limb(i));
+        }
+        for _ in 0..(num_limbs_fresh - a.num_limbs()) {
+            refreshed_limbs.push(zero_val.clone());
+        }
+        let limb_max =
+            main_gate.assign_constant(ctx, big_to_fe(BigUint::from(1usize) << self.limb_width))?;
+        for i in 0..num_limbs_fresh {
+            let mut limb = refreshed_limbs[i].clone();
+            for j in 0..(increased_limbs_vec[i] + 1) {
+                let (q, n) = self.div_mod_main_gate(ctx, &limb, &limb_max)?;
+                refreshed_limbs[i + j] = main_gate.add(ctx, &refreshed_limbs[i + j], &n)?;
+                limb = q;
+            }
+            main_gate.assert_zero(ctx, &limb)?;
+        }
+        let range_chip = self.range_chip();
+        for i in 0..num_limbs_fresh {
+            let limb_val = refreshed_limbs[i].value().map(|f| *f);
+            let range_assigned = range_chip.assign(
+                ctx,
+                limb_val,
+                Self::sublimb_bit_len(self.limb_width),
+                self.limb_width,
+            )?;
+            main_gate.assert_equal(ctx, &refreshed_limbs[i], &range_assigned)?;
+        }
+        let refreshed_limbs = refreshed_limbs
+            .into_iter()
+            .map(|v| AssignedLimb::<F, Fresh>::from(v))
+            .collect::<Vec<AssignedLimb<F, Fresh>>>();
+        let refreshed = AssignedInteger::new(&refreshed_limbs);
+        Ok(refreshed)
     }
 
     /// Given two inputs `a,b`, performs the addition `a + b`.
@@ -1713,6 +1776,93 @@ mod test {
                     let a1_assigned = bigint_chip.assign_integer(ctx, a1_unassigned)?;
                     let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
                     bigint_chip.assert_equal_fresh(ctx, &a1_assigned, &zero)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestRefreshCircuit,
+        test_refresh_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random refresh test",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ba = bigint_chip.mul(ctx, &b_assigned, &a_assigned)?;
+                    let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
+                    let ab_refreshed = bigint_chip.refresh(ctx, &ab, &aux)?;
+                    let ba_refreshed = bigint_chip.refresh(ctx, &ba, &aux)?;
+                    bigint_chip.assert_equal_fresh(ctx, &ab_refreshed, &ba_refreshed)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestThreeMulCircuit,
+        test_three_mul_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "multiplication test with three integers",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
+                    let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
+                    let bn = bigint_chip.mul(ctx, &b_assigned, &n_assigned)?;
+                    let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
+                    let ab_refreshed = bigint_chip.refresh(ctx, &ab, &aux)?;
+                    let bn_refreshed = bigint_chip.refresh(ctx, &bn, &aux)?;
+                    let num1 = ab_refreshed.num_limbs();
+                    let num2 = n_assigned.num_limbs();
+                    let ab_n = bigint_chip.mul(ctx, &ab_refreshed, &n_assigned)?;
+                    let bn_a = bigint_chip.mul(ctx, &bn_refreshed, &a_assigned)?;
+                    bigint_chip.assert_equal_muled(ctx, &ab_n, &bn_a, num1, num2)?;
                     Ok(())
                 },
             )?;

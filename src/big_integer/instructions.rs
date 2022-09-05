@@ -1,4 +1,4 @@
-use crate::{AssignedInteger, Fresh, Muled, RangeType, UnassignedInteger};
+use crate::{AssignedInteger, Fresh, Muled, RangeType, RefreshAux, UnassignedInteger};
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::{AssignedValue, RegionCtx};
 use num_bigint::BigUint;
@@ -35,6 +35,14 @@ pub trait BigIntInstructions<F: FieldExt> {
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         num_limbs: usize,
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
+
+    /// Converts a [`Muled`] type integer to a [`Fresh`] type integer.
+    fn refresh(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: &AssignedInteger<F, Muled>,
+        aux: &RefreshAux,
     ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
     /// Given two inputs `a,b`, performs the addition `a + b`.

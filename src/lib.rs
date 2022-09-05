@@ -1,6 +1,6 @@
 pub mod big_integer;
 //mod rsa_signature;
-pub mod chip;
+mod chip;
 use big_integer::*;
 use chip::*;
 //pub use rsa_signature::*;
