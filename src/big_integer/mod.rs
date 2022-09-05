@@ -6,73 +6,182 @@
 //! The [`Fresh`] type is allocated to the integers that are not multiplied yet, and the [`Muled`] type is allocated after they are multiplied.
 //! We distinguish them to manage the maximum value of the limbs.
 //!
-//! # Usage
-//! The [`BigIntChip`] supports the allocation, addition, subtraction, multiplication, modular multiplication, modular power, comparison, and others of [`AssignedInteger`].
-//! Below we explain how to use this chip.
+//! # Examples
+//! The [`BigIntChip`] supports various operations of [`AssignedInteger`], e.g. allocation, addition, subtraction, multiplication, modular operations, and comparison.
+//! Below we present an example of its usage.
 //!
-//! ## Chip configuration
-//! Before configuring the [`BigIntChip`], you have to create a configuration, [`BigIntConfig`].
-//! It depends on [`MainGateConfig`] and [`RangeConfig`].
-//! You can compute the `composition_bit_lens` and `overflow_bit_lens` parameters, which are necessary for [`RangeConfig`], using the `BigIntChip::<F>::compute_range_lens` function.
-//! The [`BigIntChip`] is created specifying the bit length of the limb (`limb_width`) and that of the big integer (`bits_len`).   
 //! ```
-//! let main_gate_config = MainGate::<F>::configure(meta);
-//! let (composition_bit_lens, overflow_bit_lens) = BigIntChip::<F>::compute_range_lens(
-//!    limb_width,
-//!    bits_len / limb_width,
-//! );
-//! let range_config = RangeChip::<F>::configure(
-//!     meta,
-//!     &main_gate_config,
-//!     composition_bit_lens,
-//!     overflow_bit_lens,
-//! );
-//! let bigint_config = BigIntConfig::new(range_config, main_gate_config);
-//! let bigint_chip = BigIntChip::new(bigint_config, limb_width, bits_len);
-//! ```
+//! use halo2_rsa::big_integer::{BigIntConfig, BigIntChip, BigIntInstructions, AssignedInteger, Fresh, Muled, RangeType, UnassignedInteger, RefreshAux};
+//! use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::{Circuit, ConstraintSystem,Error}, circuit::SimpleFloorPlanner};
+//! use maingate::{
+//!    big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
+//!    MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+//! };
+//! use num_bigint::BigUint;
+//! use std::marker::PhantomData;
 //!
-//! ## Allocation
-//! You can create the [`AssignedInteger`] either from a variable integer or a constant integer.
-//! For the variable integer, you first create [`UnassignedInteger`] from limb values, and then assign a new integer by the `assign_integer` function.
-//! For the constant integer, you can directly assign it by the `assign_constant_fresh` function.
-//! ```
-//! let x = BigUint::default();
-//! let x_limbs = decompose_big::<F>(x, num_limbs, limb_width);
-//! let x_unassigned = UnassignedInteger::from(x_limbs);
-//! let x_assigned = bigint_chip.assign_integer(ctx, x_unassigned)?;
-//! let c = BigUint::default();
-//! let c_assigned = bigint_chip.assign_constant_fresh(ctx, c)?;
-//! ```
+//! #[derive(Debug, Clone)]
+//! struct BigIntExample<F:FieldExt> {
+//!     // input integers to the circuit.
+//!     a: BigUint,
+//!     b: BigUint,
+//!     c: BigUint,
+//!     // a modulus.
+//!     n: BigUint,
+//!     _f: PhantomData<F>,
+//! }
 //!
-//! ## Addition and Subtraction
-//! To add and subtract [`AssignedInteger`], you only have to call `add` and `sub` functions.
-//! The `add` function returns an addition result as [`AssignedInteger`] and a carry as [`AssignedLimb`].
-//! The `sub` function returns a subtraction result as [`AssignedInteger`] and an assigned bit as [`AssignedValue`] that represents whether the result is overflowed or not.
-//! ```
-//! // Assign `a=2`.
-//! let a = BigUint::from(2u8);
-//! let a_limbs = decompose_big::<F>(a, num_limbs, limb_width);
-//! let a_unassigned = UnassignedInteger::from(a_limbs);
-//! let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-//! // Assign `b=1`.
-//! let b = BigUint::from(1u8);
-//! let b_limbs = decompose_big::<F>(b, num_limbs, limb_width);
-//! let b_unassigned = UnassignedInteger::from(b_limbs);
-//! let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-//! // Assign `c=4`.
-//! let c = BigUint::from(4u8);
-//! let c_limbs = decompose_big::<F>(c, num_limbs, limb_width);
-//! let c_unassigned = UnassignedInteger::from(c_limbs);
-//! let c_assigned = bigint_chip.assign_integer(ctx, c_unassigned)?;
+//! impl<F: FieldExt> BigIntExample<F> {
+//!     // Each limb of integers in our circuit is 64 bits.
+//!     const LIMB_WIDTH: usize = 64;
+//!     // The integers in our circuit is 2048 bits.
+//!     const BITS_LEN: usize = 2048;
+//!     fn bigint_chip(&self, config: BigIntConfig) -> BigIntChip<F> {
+//!         BigIntChip::new(config, Self::LIMB_WIDTH, Self::BITS_LEN)
+//!     }
+//! }
 //!
-//! // Perform `a_b_add = a + b = 3`.
-//! let (a_b_add, carry) = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
-//! // Perform `a_b_sub = a - b = 1`. The `is_overflowed` should be zero in this case.
-//! let (a_b_sub, is_overflowed) = bigint_chip.sub(ctx, &a_assigned, &b_assigned)?;
-//! // Perform `ab_c_sub = a_b_add - c = 3 - 4 < 0`. The `is_overflowed` should be one in this case.
-//! let (ab_c_sub, is_overflowed) = bigint_chip.sub(ctx, &a_b_add, &c_assigned)?;
-//! ```
+//! impl<F: FieldExt> Circuit<F> for BigIntExample<F> {
+//!     // The configuration of our circuit is `BigIntConfig` itself.
+//!     type Config = BigIntConfig;
+//!     type FloorPlanner = SimpleFloorPlanner;
 //!
+//!     fn without_witnesses(&self) -> Self {
+//!         unimplemented!();
+//!     }
+//!
+//!     // Configures our circuit.
+//!     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+//!         // 1. Configure `MainGate`.
+//!         let main_gate_config = MainGate::<F>::configure(meta);
+//!         // 2. Compute bit length parameters by calling `BigIntChip::<F>::compute_range_lens` function.
+//!         let (composition_bit_lens, overflow_bit_lens) =
+//!         BigIntChip::<F>::compute_range_lens(
+//!             Self::LIMB_WIDTH,
+//!             Self::BITS_LEN / Self::LIMB_WIDTH,
+//!         );
+//!         // 3. Configure `RangeChip`.
+//!         let range_config = RangeChip::<F>::configure(
+//!             meta,
+//!             &main_gate_config,
+//!             composition_bit_lens,
+//!             overflow_bit_lens,
+//!         );
+//!         // 4. Configure `BigIntConfig`.
+//!         BigIntConfig::new(range_config, main_gate_config)
+//!     }
+//!
+//!     // Define constraints for our circuit.
+//!     fn synthesize(
+//!         &self,
+//!         config: Self::Config,
+//!         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+//!     ) -> Result<(), Error> {
+//!         // Create `BigIntChip`.
+//!         let bigint_chip = self.bigint_chip(config);
+//!         // The default number of limbs is `Self::BITS_LEN / Self::LIMB_WIDTH = 32`
+//!         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+//!
+//!         layouter.assign_region(
+//!             || "big-integer example",
+//!             |mut region| {
+//!                 let offset = &mut 0;
+//!                 let ctx = &mut RegionCtx::new(&mut region, offset);
+//!                 // 1. Decompose inputs into limbs.
+//!                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
+//!                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
+//!                 let c_limbs = decompose_big::<F>(self.c.clone(), num_limbs, Self::LIMB_WIDTH);
+//!                 let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
+//!                 
+//!                 // 2. Create `UnassignedInteger` from the limbs.
+//!                 let a_unassigned = UnassignedInteger::from(a_limbs);
+//!                 let b_unassigned = UnassignedInteger::from(b_limbs);
+//!                 let c_unassigned = UnassignedInteger::from(c_limbs);
+//!                 let n_unassigned = UnassignedInteger::from(n_limbs);
+//!
+//!                 // 3. Assign the integers by calling `assign_integer` function.
+//!                 let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+//!                 let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+//!                 let c_assigned = bigint_chip.assign_integer(ctx, c_unassigned)?;
+//!                 let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
+//!
+//!                 // 4. We first compute `(a + b) * c`.
+//!                 // `a_b_sum = a + b`.
+//!                 let a_b_sum = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
+//!                 // `ab_c_mul = a_b_sum * c`. Its range type is defined as `Muled` because its limb value may overflow the maximum value of the `Fresh` type limb.
+//!                 let ab_c_mul = bigint_chip.mul(ctx, &a_b_sum, &c_assigned)?;
+//!                 // We prepare the auxiliary data for refreshing `ab_c_mul` to a `Fresh` type integer.
+//!                 let aux0 = RefreshAux::new(Self::LIMB_WIDTH, a_b_sum.num_limbs(), c_assigned.num_limbs());
+//!                 // We convert the range type of `ab_c_mul` from `Muled` to `Fresh` by calling `refresh` function.
+//!                 // `val0 = a_b_sum * c = (a + b) * c`
+//!                 let val0 = bigint_chip.refresh(ctx, &ab_c_mul, &aux0)?;
+//!
+//!                 // 5. We then compute `a * c + b * c`.
+//!                 // `a_c_mul = a * c`.
+//!                 let a_c_mul = bigint_chip.mul(ctx, &a_assigned, &c_assigned)?;
+//!                 // We refresh `a_c_mul` to a `Fresh` type integer using the auxiliary data.
+//!                 let aux1 = RefreshAux::new(Self::LIMB_WIDTH, a_assigned.num_limbs(), c_assigned.num_limbs());
+//!                 let a_c_refreshed = bigint_chip.refresh(ctx, &a_c_mul, &aux1)?;
+//!                 // `b_c_mul = b * c`.
+//!                 let b_c_mul = bigint_chip.mul(ctx, &b_assigned, &c_assigned)?;
+//!                 // We refresh `b_c_mul` to a `Fresh` type integer using the auxiliary data.
+//!                 let aux2 = RefreshAux::new(Self::LIMB_WIDTH, b_assigned.num_limbs(), c_assigned.num_limbs());
+//!                 let b_c_refreshed = bigint_chip.refresh(ctx, &b_c_mul, &aux2)?;
+//!                 // `val1 = a_c_refreshed + b_c_refreshed = a * c + b * c`.
+//!                 let val1 = bigint_chip.add(ctx, &a_c_refreshed, &b_c_refreshed)?;
+//!                 
+//!                 // 6. Assert that `val0` is equal to `val1`.
+//!                 bigint_chip.assert_equal_fresh(ctx, &val0, &val1)?;
+//!                 Ok(())
+//!             },
+//!         )?;
+//!         // Create lookup tables for range check in `range_chip`.
+//!         let range_chip = bigint_chip.range_chip();
+//!         range_chip.load_composition_tables(&mut layouter)?;
+//!         range_chip.load_overflow_tables(&mut layouter)?;
+//!         Ok(())
+//!     }
+//! }
+//!
+//! fn main() {
+//!     use halo2wrong::halo2::dev::MockProver;
+//!     use num_bigint::RandomBits;
+//!     use rand::{thread_rng, Rng};
+//!     use halo2wrong::curves::pasta::Fp as F;
+//!
+//!     let mut rng = thread_rng();
+//!     let bits_len = BigIntExample::<F>::BITS_LEN as u64;
+//!     // 1. Uniformly sample `n` whose bit length is `BigIntExample::<F>::BITS_LEN`.
+//!     let mut n = BigUint::default();
+//!     while n.bits() != bits_len {
+//!         n = rng.sample(RandomBits::new(bits_len));
+//!     }
+//!     // 2. Uniformly sample `a`, `b`, and `c` from the order-`n` finite field.
+//!     let a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+//!     let b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+//!     let c = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+//!
+//!     // 3. Create our circuit!
+//!     let circuit = BigIntExample::<F> {
+//!         a,
+//!         b,
+//!         c,
+//!         n,
+//!         _f: PhantomData,
+//!     };
+//!      
+//!     // 4. Generate a proof.
+//!     let public_inputs = vec![vec![]];
+//!     let k = 14;
+//!     let prover = match MockProver::run(k, &circuit, public_inputs) {
+//!         Ok(prover) => prover,
+//!         Err(e) => panic!("{:#?}", e)
+//!     };
+//!     // 5. Verify the proof.
+//!     assert!(prover.verify().is_ok());
+//! }
+//!
+
 mod chip;
 mod instructions;
 use std::marker::PhantomData;
@@ -101,7 +210,7 @@ impl RangeType for Fresh {}
 /// [`RangeType`] assigned to [`AssignedLimb`] and [`AssignedInteger`] that are already multiplied.
 ///
 /// The value of the [`Muled`] type limb may overflow the maximum value of the [`Fresh`] type limb.
-/// For this reason, we distinguish between these two types of integers.
+/// You can convert the [`Muled`] type integer to the [`Fresh`] type integer by calling [`BigIntInstructions::refresh`] function.
 #[derive(Debug, Clone)]
 pub struct Muled {}
 impl RangeType for Muled {}
@@ -286,6 +395,10 @@ impl<F: FieldExt> AssignedInteger<F, Fresh> {
     ///
     /// # Arguments
     /// * zero_limb - an assigned limb representing zero.
+    ///
+    /// # Return values
+    /// Returns the converted integer whose type is [`AssignedInteger<F, Muled>`].
+    /// The number of limbs of the converted integer increases to `2 * num_limb - 1`.
     pub fn to_muled(&self, zero_limb: AssignedLimb<F, Muled>) -> AssignedInteger<F, Muled> {
         let num_limb = self.num_limbs();
         let mut limbs = self
@@ -303,14 +416,14 @@ impl<F: FieldExt> AssignedInteger<F, Fresh> {
 /// Auxiliary data for refreshing a [`Muled`] type integer to a [`Fresh`] type integer.
 #[derive(Debug, Clone)]
 pub struct RefreshAux {
-    pub limb_width: usize,
-    pub num_limbs_l: usize,
-    pub num_limbs_r: usize,
-    pub increased_limbs_vec: Vec<usize>,
+    limb_width: usize,
+    num_limbs_l: usize,
+    num_limbs_r: usize,
+    increased_limbs_vec: Vec<usize>,
 }
 
 impl RefreshAux {
-    /// Computes `increased_limbs_vec` from `num_limbs_l` and `num_limbs_r`.
+    /// Creates a new [`RefreshAux`] corresponding to `num_limbs_l` and `num_limbs_r`.
     ///
     /// # Arguments
     /// * `limb_width` - bit length of the limb.
@@ -386,8 +499,8 @@ mod test {
     fn test_refresh_aux_random() {
         let mut rng = thread_rng();
         let limb_width = 32;
-        let num_limbs_l = rng.gen::<u8>() as usize;
-        let num_limbs_r = rng.gen::<u8>() as usize;
+        let num_limbs_l = rng.gen::<u8>() as usize + 1usize;
+        let num_limbs_r = rng.gen::<u8>() as usize + 1usize;
         let refresh_aux_0 = RefreshAux::new(limb_width, num_limbs_l, num_limbs_r);
         let refresh_aux_1 = RefreshAux::new(limb_width, num_limbs_r, num_limbs_l);
         assert_eq!(

@@ -51,7 +51,7 @@ pub trait BigIntInstructions<F: FieldExt> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
-    ) -> Result<(AssignedInteger<F, Fresh>, AssignedLimb<F, Fresh>), Error>;
+    ) -> Result<AssignedInteger<F, Fresh>, Error>;
 
     /// Given two inputs `a,b`, performs the subtraction `a - b`.
     fn sub(

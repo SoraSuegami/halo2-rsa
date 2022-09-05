@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    AssignedInteger, AssignedLimb, BigIntInstructions, Fresh, Muled, RangeType, UnassignedInteger,
+    AssignedInteger, AssignedLimb, BigIntInstructions, Fresh, Muled, RangeType, RefreshAux,
+    UnassignedInteger,
 };
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 use maingate::{
@@ -10,8 +11,6 @@ use maingate::{
 };
 
 use num_bigint::BigUint;
-
-use super::RefreshAux;
 
 /// Configuration for [`BigIntChip`].
 #[derive(Clone, Debug)]
@@ -162,6 +161,9 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns a refreshed `a` whose type is [`AssignedInteger<F, Fresh>`].
+    ///
+    /// # Panics
+    /// Panics if `self.limb_width` is not equal to `aux.limb_width` or `a.num_limbs()` is not equal to `aux.num_limbs_l + aux.num_limbs_r - 1`.
     fn refresh(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -190,7 +192,11 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             let mut limb = refreshed_limbs[i].clone();
             for j in 0..(increased_limbs_vec[i] + 1) {
                 let (q, n) = self.div_mod_main_gate(ctx, &limb, &limb_max)?;
-                refreshed_limbs[i + j] = main_gate.add(ctx, &refreshed_limbs[i + j], &n)?;
+                if j == 0 {
+                    refreshed_limbs[i] = n;
+                } else {
+                    refreshed_limbs[i + j] = main_gate.add(ctx, &refreshed_limbs[i + j], &n)?;
+                }
                 limb = q;
             }
             main_gate.assert_zero(ctx, &limb)?;
@@ -222,14 +228,14 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// * `b` - input of addition.
     ///
     /// # Return values
-    /// Returns the addition result `a + b` as [`AssignedInteger<F, Fresh>`] and a carry limb as [`AssignedLimb<F, Fresh>`].
-    /// The resulting number of limbs is equivalent to the maximum number of limbs of the inputs.
+    /// Returns the addition result `a + b` as [`AssignedInteger<F, Fresh>`].
+    /// The resulting number of limbs is equivalent to `max(a.num_limbs(), b.num_limbs()) + 1`.
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
-    ) -> Result<(AssignedInteger<F, Fresh>, AssignedLimb<F, Fresh>), Error> {
+    ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let limb_width = self.limb_width;
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
@@ -261,13 +267,14 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             c_vals.push(c);
             carrys.push(carry);
         }
-        let last_carry = AssignedLimb::from(carrys[max_n].clone());
+        c_vals.push(carrys[max_n].clone());
+        //let last_carry = AssignedLimb::from(carrys[max_n].clone());
         let c_limbs = c_vals
             .into_iter()
             .map(|v| AssignedLimb::from(v))
             .collect::<Vec<AssignedLimb<F, Fresh>>>();
         let sum = AssignedInteger::new(&c_limbs);
-        Ok((sum, last_carry))
+        Ok(sum)
     }
 
     /// Given two inputs `a,b`, performs the subtraction `a - b`.
@@ -289,8 +296,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error> {
         let n2 = b.num_limbs();
         let max_int = self.max_value(ctx, n2)?;
-        let (mut inflated_a, a_carry) = self.add(ctx, a, &max_int)?;
-        inflated_a.0.push(a_carry);
+        let mut inflated_a = self.add(ctx, a, &max_int)?;
         let mut inflated_subed = self.sub_unchecked(ctx, &inflated_a, b)?;
         let main_gate = self.main_gate();
         let one = main_gate.assign_bit(ctx, Value::known(F::one()))?;
@@ -416,6 +422,9 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the modular addition result `a + b mod n` as [`AssignedInteger<F, Fresh>`].
+    ///
+    /// # Requirements
+    /// Before calling this function, you must assert that `a<n` and `b<n`.
     fn add_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -423,8 +432,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
-        let (mut added, carry) = self.add(ctx, a, b)?;
-        added.0.push(carry);
+        let mut added = self.add(ctx, a, b)?;
         let (mut subed, is_overflowed) = self.sub(ctx, &added, n)?;
         let num_limbs = if added.num_limbs() > subed.num_limbs() {
             added.num_limbs()
@@ -455,6 +463,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the modular subtraction result `a - b mod n` as [`AssignedInteger<F, Fresh>`].
+    /// # Requirements
+    /// Before calling this function, you must assert that `a<n` and `b<n`.
     fn sub_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -494,6 +504,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the modular multiplication result `a * b mod n` as [`AssignedInteger<F, Fresh>`].
+    /// # Requirements
+    /// Before calling this function, you must assert that `a<n` and `b<n`.
     fn mul_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -581,6 +593,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the modular square result `a^2 mod n` as [`AssignedInteger<F, Fresh>`].
+    /// # Requirements
+    /// Before calling this function, you must assert that `a<n`.
     fn square_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -600,6 +614,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the modular power result `a^e mod n` as [`AssignedInteger<F, Fresh>`].
+    /// # Requirements
+    /// Before calling this function, you must assert that `a<n`.
     fn pow_mod(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -640,6 +656,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the modular power result `a^e mod n` as [`AssignedInteger<F, Fresh>`].
+    /// # Requirements
+    /// Before calling this function, you must assert that `a<n`.
     fn pow_mod_fixed_exp(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1203,7 +1221,6 @@ impl<F: FieldExt> BigIntChip<F> {
         } else {
             a.num_limbs()
         };
-        let main_gate = self.main_gate();
         let range_chip = self.range_chip();
         let a_big = a.to_big_uint(limb_width);
         let b_big = b.to_big_uint(limb_width);
@@ -1218,8 +1235,7 @@ impl<F: FieldExt> BigIntChip<F> {
             c_big = c_big.map(|b| b >> limb_width);
         }
         let c = AssignedInteger::new(&c_limbs);
-        let (added, carry) = self.add(ctx, b, &c)?;
-        main_gate.assert_zero(ctx, &carry.into())?;
+        let added = self.add(ctx, b, &c)?;
         self.assert_equal_fresh(ctx, a, &added)?;
         Ok(c)
     }
@@ -1409,24 +1425,25 @@ mod test {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let all_sum = &self.a + &self.b;
-                    let carry = &all_sum >> Self::BITS_LEN;
-                    let base = BigUint::from(1usize) << Self::BITS_LEN;
-                    let sum = &all_sum - &carry * &base;
+                    let sum = &self.a + &self.b;
+                    //let carry = &all_sum >> Self::BITS_LEN;
+                    //let base = BigUint::from(1usize) << Self::BITS_LEN;
+                    //let sum = &all_sum - &carry * &base;
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-                    let sum_assigned_int = bigint_chip.assign_constant_fresh(ctx, sum)?;
+                    let sum_assigned_int =
+                        bigint_chip.assign_constant(ctx, sum, Self::BITS_LEN + 1)?;
                     let added = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
-                    bigint_chip.assert_equal_fresh(ctx, &sum_assigned_int, &added.0)?;
-                    bigint_chip.main_gate().assert_equal_to_constant(
+                    bigint_chip.assert_equal_fresh(ctx, &sum_assigned_int, &added)?;
+                    /*bigint_chip.main_gate().assert_equal_to_constant(
                         ctx,
                         &added.1 .0,
                         big_to_fe(carry),
-                    )?;
+                    )?;*/
                     Ok(())
                 },
             )?;
@@ -1462,7 +1479,7 @@ mod test {
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
                     let added = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
-                    bigint_chip.assert_equal_fresh(ctx, &a_assigned, &added.0)?;
+                    bigint_chip.assert_equal_fresh(ctx, &a_assigned, &added)?;
                     Ok(())
                 },
             )?;
@@ -1791,7 +1808,7 @@ mod test {
         test_refresh_circuit,
         64,
         2048,
-        true,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
@@ -1831,7 +1848,7 @@ mod test {
         test_three_mul_circuit,
         64,
         2048,
-        true,
+        false,
         fn synthesize(
             &self,
             config: Self::Config,
