@@ -70,7 +70,9 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let range_gate = self.range_chip();
         let limb_width = self.limb_width;
         let num_limbs = integer.num_limbs();
+        // `integer.num_limbs() == self.num_limbs`.
         assert_eq!(num_limbs, self.num_limbs);
+        // Assign each limb as `AssignedValue`.
         let values = (0..num_limbs)
             .map(|i| {
                 let limb = integer.limb(i);
@@ -100,6 +102,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         integer: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        // The number of limbs is `self.num_limbs`.
         self.assign_constant(ctx, integer, self.num_limbs)
     }
 
@@ -125,6 +128,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         num_limbs_l: usize,
         num_limbs_r: usize,
     ) -> Result<AssignedInteger<F, Muled>, Error> {
+        // The number of limbs is `num_limbs_l + num_limbs_r - 1`.
         self.assign_constant(ctx, integer, num_limbs_l + num_limbs_r - 1)
     }
 
@@ -143,10 +147,12 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let mut limbs = Vec::with_capacity(num_limbs);
         let one = BigUint::from(1usize);
-        let out_base = big_to_fe::<F>((&one << self.limb_width) - &one);
+        // The maximum value of the limb is `1^(self.limb_width) - 1`.
+        let limb_max = big_to_fe::<F>((&one << self.limb_width) - &one);
         let main_gate = self.main_gate();
+        // Each limb of the new integer is `limb_max`.
         for _ in 0..num_limbs {
-            let val = main_gate.assign_constant(ctx, out_base.clone())?;
+            let val = main_gate.assign_constant(ctx, limb_max.clone())?;
             limbs.push(AssignedLimb::from(val));
         }
         Ok(AssignedInteger::new(&limbs))
@@ -170,10 +176,13 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Muled>,
         aux: &RefreshAux,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        // For converting `a` to a [`Fresh`] type integer, we decompose each limb of `a` into `self.limb_width`-bits values.
         assert_eq!(self.limb_width, aux.limb_width);
+        // The i-th value of `aux.increased_limbs_vec` represents the number of increased values when converting i-th limb of `a` into `self.limb_width`-bits values.
         let increased_limbs_vec = aux.increased_limbs_vec.clone();
         let num_limbs_l = aux.num_limbs_l;
         let num_limbs_r = aux.num_limbs_r;
+        // The following assertion holds since `a` is the product of two integers `l` and `r` whose number of limbs is `num_limbs_l` and `num_limbs_r`, respectively.
         assert_eq!(a.num_limbs(), num_limbs_l + num_limbs_r - 1);
         let num_limbs_fresh = increased_limbs_vec.len();
 
@@ -189,19 +198,27 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let limb_max =
             main_gate.assign_constant(ctx, big_to_fe(BigUint::from(1usize) << self.limb_width))?;
         for i in 0..num_limbs_fresh {
+            // `i`-th overflowing limb value.
             let mut limb = refreshed_limbs[i].clone();
             for j in 0..(increased_limbs_vec[i] + 1) {
+                // `n` is lower `self.limb_width` bits of `limb`.
+                // `q` is any other upper bits.
                 let (q, n) = self.div_mod_main_gate(ctx, &limb, &limb_max)?;
                 if j == 0 {
+                    // When `j=0`, `n` is a new `i`-th limb value.
                     refreshed_limbs[i] = n;
                 } else {
+                    // When `j>0`, `n` is carried to the `i+j`-th limb.
                     refreshed_limbs[i + j] = main_gate.add(ctx, &refreshed_limbs[i + j], &n)?;
                 }
+                // We use `q` as the next `limb`.
                 limb = q;
             }
+            // `limb` should be zero because we decomposed all bits of the `i`-th overflowing limb value into `self.limb_width` bits values.
             main_gate.assert_zero(ctx, &limb)?;
         }
         let range_chip = self.range_chip();
+        // Assert that the new limb values fit in `self.limb_widt` bits.
         for i in 0..num_limbs_fresh {
             let limb_val = refreshed_limbs[i].value().map(|f| *f);
             let range_assigned = range_chip.assign(
@@ -242,33 +259,40 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let max_n = if n1 < n2 { n2 } else { n1 };
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
+
+        // Align the number of limbs of `a` and `b` by padding with `zero_value`.
         let zero_value = main_gate.assign_constant(ctx, F::zero())?;
         let mut a = a.clone();
         a.extend_limbs(max_n - n1, zero_value.clone());
         let mut b = b.clone();
         b.extend_limbs(max_n - n2, zero_value.clone());
+
+        // Compute a sum and a carry for each limb values.
         let mut c_vals = Vec::with_capacity(max_n);
         let mut carrys = Vec::with_capacity(max_n + 1);
         carrys.push(zero_value);
-        let out_base = BigUint::from(1usize) << limb_width;
-        let out_base_val = main_gate.assign_constant(ctx, big_to_fe(out_base.clone()))?;
+        let limb_max = BigUint::from(1usize) << limb_width;
+        let limb_max_val = main_gate.assign_constant(ctx, big_to_fe(limb_max.clone()))?;
         for i in 0..max_n {
             let a_b = main_gate.add(ctx, &a.limb(i), &b.limb(i))?;
             let sum = main_gate.add(ctx, &a_b, &carrys[i])?;
             let sum_big = sum.value().map(|f| fe_to_big(*f));
-            let c_val_f = sum_big.clone().map(|b| big_to_fe::<F>(b % &out_base));
+            // `c_val_f` is lower `self.limb_width` bits of `a + b + carrys[i]`.
+            let c_val_f = sum_big.clone().map(|b| big_to_fe::<F>(b % &limb_max));
             let carry_f = sum_big.map(|b| big_to_fe::<F>(b >> limb_width));
+            // `c` and `carry` should fit in `self.limb_widt` bits.
             let c =
                 range_chip.assign(ctx, c_val_f, Self::sublimb_bit_len(limb_width), limb_width)?;
             let carry =
                 range_chip.assign(ctx, carry_f, Self::sublimb_bit_len(limb_width), limb_width)?;
-            let c_add_carry = main_gate.mul_add(ctx, &carry, &out_base_val, &c)?;
+            let c_add_carry = main_gate.mul_add(ctx, &carry, &limb_max_val, &c)?;
+            // `a + b + carrys[i] == c + carry`
             main_gate.assert_equal(ctx, &sum, &c_add_carry)?;
             c_vals.push(c);
             carrys.push(carry);
         }
+        // Add the last carry to the `c_vals`.
         c_vals.push(carrys[max_n].clone());
-        //let last_carry = AssignedLimb::from(carrys[max_n].clone());
         let c_limbs = c_vals
             .into_iter()
             .map(|v| AssignedLimb::from(v))
@@ -294,14 +318,21 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error> {
+        // Instead of directly computing `a - b`, we first compute `(a + max - b)`, where `max` denotes the maximum integer whose number of limbs is `b.num_limbs()`.
+        // It prevents the subtraction　result from being negative.
         let n2 = b.num_limbs();
         let max_int = self.max_value(ctx, n2)?;
-        let mut inflated_a = self.add(ctx, a, &max_int)?;
-        let mut inflated_subed = self.sub_unchecked(ctx, &inflated_a, b)?;
+        let inflated_a = self.add(ctx, a, &max_int)?;
+        let inflated_subed = self.sub_unchecked(ctx, &inflated_a, b)?;
+
         let main_gate = self.main_gate();
         let one = main_gate.assign_bit(ctx, Value::known(F::one()))?;
+
+        // Determine if `a - b` is overflowed by checking the `b.num_limbs()`-th limb of `inflated_subed`.
+        // If the limb is equal to one, no overflow is occurring because it implies `(a + max - b) >= max <=> a - b >= 0`.
         let is_not_overflowed = main_gate.is_equal(ctx, &inflated_subed.limb(n2), &one)?;
         let is_overflowed = main_gate.not(ctx, &is_not_overflowed)?;
+
         let num_limbs_l = if n2 > inflated_subed.num_limbs() {
             n2
         } else {
@@ -312,12 +343,10 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         } else {
             n2
         };
-
         let zero_value = self.main_gate().assign_constant(ctx, F::zero())?;
-        inflated_subed.extend_limbs(num_limbs_l - inflated_subed.num_limbs(), zero_value.clone());
-        let mut b = b.clone();
-        b.extend_limbs(num_limbs_l - b.num_limbs(), zero_value.clone());
 
+        // If `is_not_overflowed=1`, compute `inflated_subed - max_int = a - b`.
+        // Otherwise, compute `b - a`.
         let mut sel_l_limbs = Vec::with_capacity(num_limbs_l);
         let mut sel_r_limbs = Vec::with_capacity(num_limbs_r);
         for i in 0..num_limbs_l {
@@ -369,12 +398,16 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Muled>, Error> {
+        // The following constraints are designed with reference to PolynomialMultiplier template in https://github.com/jacksoom/circom-bigint/blob/master/circuits/mult.circom.
+        // However, unlike the circom-bigint implementation, we do not adopt the xJsnark's multiplication technique in https://akosba.github.io/papers/xjsnark.pdf, where the order of constraints is only O(n).
+        // This is because addition is not free, i.e. it makes constraints as well as multiplication, in the Plonk constraints system.
         let d0 = a.num_limbs();
         let d1 = b.num_limbs();
         let d = d0 + d1 - 1;
         let main_gate = self.main_gate();
         let mut c_vals = Vec::new();
         for i in 0..d {
+            // `acc` denotes the `i`-th limb of the returned integer.
             let mut acc = main_gate.assign_constant(ctx, big_to_fe(BigUint::default()))?;
             let mut j = if d1 >= i + 1 { 0 } else { i + 1 - d1 };
             while j < d0 && j <= i {
@@ -432,6 +465,9 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        // 1. Compute `a + b`.
+        // 2. Compute `a + b - n`.
+        // 3. If the subtraction is overflowed, i.e. `a + b < n`, returns `a + b`. Otherwise, returns `a + b - n`.
         let mut added = self.add(ctx, a, b)?;
         let (mut subed, is_overflowed) = self.sub(ctx, &added, n)?;
         let num_limbs = if added.num_limbs() > subed.num_limbs() {
@@ -449,7 +485,10 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
                     .select(ctx, &added.limb(i), &subed.limb(i), &is_overflowed)?;
             res_limbs.push(AssignedLimb::<_, Fresh>::from(val));
         }
-        let res = AssignedInteger::new(&res_limbs);
+        for i in n.num_limbs()..num_limbs {
+            self.main_gate().assert_zero(ctx, &res_limbs[i].0)?;
+        }
+        let res = AssignedInteger::new(&res_limbs[0..n.num_limbs()]);
         Ok(res)
     }
 
@@ -472,7 +511,11 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        // 1. Compute `a - b`.
+        // 2. Compute `n - (b - a) = a - b + n`.
+        // 3. If the subtraction in 1 is overflowed, i.e. `a - b < 0`, returns `a - b + n`. Otherwise, returns `a - b`.
         let (mut subed1, is_overflowed1) = self.sub(ctx, a, b)?;
+        // If `is_overflowed1=1`, `subed2` is equal to `a - b + n` because `subed1` is `b - a` in that case.
         let (mut subed2, is_overflowed2) = self.sub(ctx, n, &subed1)?;
         self.main_gate().assert_zero(ctx, &is_overflowed2)?;
         let num_limbs = if subed1.num_limbs() > subed2.num_limbs() {
@@ -490,7 +533,10 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
                     .select(ctx, &subed2.limb(i), &subed1.limb(i), &is_overflowed1)?;
             res_limbs.push(AssignedLimb::<_, Fresh>::from(val));
         }
-        let res = AssignedInteger::new(&res_limbs);
+        for i in n.num_limbs()..num_limbs {
+            self.main_gate().assert_zero(ctx, &res_limbs[i].0)?;
+        }
+        let res = AssignedInteger::new(&res_limbs[0..n.num_limbs()]);
         Ok(res)
     }
 
@@ -513,6 +559,9 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
+        // The following constraints are designed with reference to AsymmetricMultiplierReducer template in https://github.com/jacksoom/circom-bigint/blob/master/circuits/mult.circom.
+        // However, we do not regroup multiple limbs like the circom-bigint implementation because addition is not free, i.e. it makes constraints as well as multiplication, in the Plonk constraints system.
+        // Besides, we use lookup tables to optimize range checks.
         let limb_width = self.limb_width;
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
@@ -522,27 +571,32 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             b.to_big_uint(limb_width),
             n.to_big_uint(limb_width),
         );
+        // 1. Compute the product as `BigUint`.
         let full_prod_big = a_big * b_big;
+        // 2. Compute the quotient and remainder when the product is divided by `n`.
         let (mut q_big, mut prod_big) = full_prod_big
             .zip(n_big)
             .map(|(full_prod, n)| (&full_prod / &n, &full_prod % &n))
             .unzip();
+
+        // 3. Decompose the quotient and remainder into `self.limb_width` bits limb values.
         let mut quotients = Vec::new();
         let mut prods = Vec::new();
-        let out_base = BigUint::from(1usize) << limb_width;
+        let limb_max = BigUint::from(1usize) << limb_width;
         for _ in 0..n2 {
-            let q = q_big.as_ref().map(|q| q % &out_base);
+            let q = q_big.as_ref().map(|q| q % &limb_max);
             q_big = q_big.map(|q| q >> limb_width);
             quotients.push(q.map(|b| big_to_fe::<F>(b)));
         }
         for _ in 0..n1 {
-            let p = prod_big.as_ref().map(|p| p % &out_base);
+            let p = prod_big.as_ref().map(|p| p % &limb_max);
             prod_big = prod_big.map(|p| p >> limb_width);
             prods.push(p.map(|b| big_to_fe::<F>(b)));
         }
         prod_big.map(|b| assert_eq!(b, BigUint::default()));
         q_big.map(|b| assert_eq!(b, BigUint::default()));
 
+        // 4. Assign the quotient and remainder after checking the range of each limb.
         let range_chip = self.range_chip();
         let quotient_assigns = quotients
             .into_iter()
@@ -562,6 +616,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             .collect::<Vec<AssignedLimb<_, _>>>();
         let quotient_int = AssignedInteger::new(&quotient_limbs);
         let prod_int = AssignedInteger::new(&prod_limbs);
+
+        // 5. Assert `a * b = quotient_int * n + prod_int`, i.e. `prod_int = (a * b) mod n`.
         let ab = self.mul(ctx, a, b)?;
         let qn = self.mul(ctx, &quotient_int, n)?;
         let n_sum = n1 + n2;
@@ -581,6 +637,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let eq_a = AssignedInteger::new(&eq_a_limbs);
         let eq_b = AssignedInteger::new(&eq_b_limbs);
         self.assert_equal_muled(ctx, &eq_a, &eq_b, n1, n2)?;
+
         Ok(prod_int)
     }
 
@@ -625,6 +682,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         exp_limb_bits: usize,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let main_gate = self.main_gate();
+        // Decompose `e` into bits.
         let e_bits = e
             .limbs()
             .into_iter()
@@ -636,11 +694,14 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let mut acc = self.assign_constant_fresh(ctx, BigUint::from(1usize))?;
         let mut squared = a.clone();
         for e_bit in e_bits.into_iter() {
+            // Compute `acc * squared`.
             let muled = self.mul_mod(ctx, &acc, &squared, n)?;
+            // If `e_bit = 1`, update `acc` to `acc * squared`. Otherwise, use the same `acc`.
             for j in 0..acc.num_limbs() {
                 let selected = main_gate.select(ctx, &muled.limb(j), &acc.limb(j), &e_bit)?;
                 acc.0[j] = AssignedLimb::from(selected);
             }
+            // Square `squared`.
             squared = self.square_mod(ctx, &squared, n)?;
         }
         Ok(acc)
@@ -666,6 +727,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let num_e_bits = Self::bits_size(e);
+        // Decompose `e` into bits.
         let e_bits = e
             .to_bytes_le()
             .into_iter()
@@ -680,10 +742,12 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let mut squared = a.clone();
         for e_bit in e_bits.into_iter() {
             let cur_sq = squared;
+            // Square `squared`.
             squared = self.square_mod(ctx, &cur_sq, n)?;
             if !e_bit {
                 continue;
             }
+            // If `e_bit = 1`, update `acc` to `acc * cur_sq`.
             acc = self.mul_mod(ctx, &acc, &cur_sq, n)?;
         }
         Ok(acc)
@@ -705,6 +769,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
+        // If all of the limbs of `a` are zero, `assigned_bit` is one. Otherwise, `assigned_bit` is zero.
         let mut assigned_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
         for limb in a.limbs().into_iter() {
             let is_zero = main_gate.is_zero(ctx, &limb.0)?;
@@ -737,6 +802,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let main_gate = self.main_gate();
         let mut eq_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
         for i in 0..max_n {
+            // If `i >= n1` or `i >= n1`, `i`-th limb value of the larger integer should be zero.
+            // Otherwise, their `i`-th limb value should be the same.
             let flag = if is_a_larger && i >= n2 {
                 main_gate.is_zero(ctx, &a.limb(i))?
             } else if !is_a_larger && i >= n1 {
@@ -772,12 +839,14 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         num_limbs_l: usize,
         num_limbs_r: usize,
     ) -> Result<AssignedValue<F>, Error> {
+        // The following constraints are designed with reference to EqualWhenCarried template in https://github.com/jacksoom/circom-bigint/blob/master/circuits/mult.circom.
+        // We use lookup tables to optimize range checks.
         let min_n = if num_limbs_r >= num_limbs_l {
             num_limbs_l
         } else {
             num_limbs_r
         };
-        //let n = n1 + n2;
+        // Each limb of `a` and `b` is less than `min_n * (1^(limb_width) - 1)^2  + (1^(limb_width) - 1)`.
         let word_max = Self::compute_mul_word_max(self.limb_width, min_n);
         let limb_width = self.limb_width;
         let num_limbs = num_limbs_l + num_limbs_r - 1;
@@ -785,28 +854,40 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let carry_bits = word_max_width - limb_width;
         let main_gate = self.main_gate();
         let range_chip = self.range_chip();
-        let out_base = main_gate.assign_constant(ctx, F::from_u128(1 << limb_width))?;
+
+        // The naive approach is to subtract the two integers limb by limb and:
+        //  a. Verify that they sum to zero along the way while
+        //  b. Propagating carries
+        // but this doesn't work because early sums might be negative.
+        // So instead we verify that `a - b + word_max = word_max`.
+        let limb_max = main_gate.assign_constant(ctx, F::from_u128(1 << limb_width))?;
         let mut accumulated_extra = main_gate.assign_constant(ctx, F::zero())?;
         let mut carry = Vec::with_capacity(num_limbs);
         let mut cs = Vec::with_capacity(num_limbs);
         carry.push(main_gate.assign_constant(ctx, F::zero())?);
         let mut eq_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
         for i in 0..num_limbs {
+            // `sum = a + b + word_max`
             let a_b = main_gate.sub(ctx, &a.limb(i), &b.limb(i))?;
             let sum =
                 main_gate.add_with_constant(ctx, &a_b, &carry[i], big_to_fe(word_max.clone()))?;
-            let (new_carry, c) = self.div_mod_main_gate(ctx, &sum, &out_base)?;
+            // `c` is lower `self.limb_width` bits of `sum`.
+            // `new_carry` is any other upper bits.
+            let (new_carry, c) = self.div_mod_main_gate(ctx, &sum, &limb_max)?;
             carry.push(new_carry);
             cs.push(c);
 
+            // `accumulated_extra` is the sum of `word_max`.
             accumulated_extra =
                 main_gate.add_constant(ctx, &accumulated_extra, big_to_fe(word_max.clone()))?;
-            let (q_acc, mod_acc) = self.div_mod_main_gate(ctx, &accumulated_extra, &out_base)?;
+            let (q_acc, mod_acc) = self.div_mod_main_gate(ctx, &accumulated_extra, &limb_max)?;
+            // If and only if `a` is equal to `b`, lower `self.limb_width` bits of `sum` and `accumulated_extra` are the same.
             let cs_acc_eq = main_gate.is_equal(ctx, &cs[i], &mod_acc)?;
             eq_bit = main_gate.and(ctx, &eq_bit, &cs_acc_eq)?;
             accumulated_extra = q_acc;
 
             if i < num_limbs - 1 {
+                // Assert that each carry fits in `carry_bits` bits.
                 let carry_value = carry[i + 1].value().copied();
                 let range_assigned = range_chip.assign(
                     ctx,
@@ -817,7 +898,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
                 let range_eq = main_gate.is_equal(ctx, &carry[i + 1], &range_assigned)?;
                 eq_bit = main_gate.and(ctx, &eq_bit, &range_eq)?;
             } else {
-                // The final carry should match the extra
+                // The final carry should match the `accumulated_extra`.
                 let final_carry_eq = main_gate.is_equal(ctx, &carry[i + 1], &accumulated_extra)?;
                 eq_bit = main_gate.and(ctx, &eq_bit, &final_carry_eq)?;
             }
@@ -842,6 +923,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
+        // Return if `a<=b` and `a!=b`.
         let is_overflowed = self.is_less_than_or_equal(ctx, a, b)?;
         let is_eq = self.is_equal_fresh(ctx, a, b)?;
         let is_not_eq = self.main_gate().not(ctx, &is_eq)?;
@@ -865,6 +947,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
+        // Return if `a<=b`.
         let (_, is_overflowed) = self.sub(ctx, a, b)?;
         Ok(is_overflowed)
     }
@@ -886,6 +969,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
+        // Return if `!(a<=b) <=> a>b`.
         let is_less_than_or_eq = self.is_less_than_or_equal(ctx, a, b)?;
         self.main_gate().not(ctx, &is_less_than_or_eq)
     }
@@ -907,6 +991,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
+        // Return if `!(a<b) <=> a>=b`.
         let is_less_than = self.is_less_than(ctx, a, b)?;
         self.main_gate().not(ctx, &is_less_than)
     }
@@ -928,7 +1013,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
-        // Asserts `a<n`, i.e. `0<=a<n`.
+        // Return if `a<n`, i.e. `0<=a<n`.
         self.is_less_than(ctx, a, n)
     }
 
@@ -1191,6 +1276,7 @@ impl<F: FieldExt> BigIntChip<F> {
             int_bits_size / limb_width + 1
         };
         assert!(num_limbs <= max_num_limbs);
+        // Decompose `integer` into limb values.
         let limbs = decompose_big::<F>(integer, num_limbs, limb_width);
         let main_gate = self.main_gate();
         let mut assigned_limbs: Vec<AssignedLimb<F, T>> = Vec::with_capacity(num_limbs);
@@ -1224,17 +1310,22 @@ impl<F: FieldExt> BigIntChip<F> {
         let range_chip = self.range_chip();
         let a_big = a.to_big_uint(limb_width);
         let b_big = b.to_big_uint(limb_width);
+        // If `a<b`, the following subtraction will panic.
         let mut c_big = a_big - b_big;
+
         let mut c_limbs = Vec::with_capacity(max_n);
-        let out_base = BigUint::from(1usize) << limb_width;
+        let limb_max = BigUint::from(1usize) << limb_width;
         for _ in 0..max_n {
-            let c_f = c_big.as_ref().map(|b| big_to_fe::<F>(b % &out_base));
+            // Assert that each limb fits in `limb_width` bits.
+            let c_f = c_big.as_ref().map(|b| big_to_fe::<F>(b % &limb_max));
             let c_val =
                 range_chip.assign(ctx, c_f, Self::sublimb_bit_len(limb_width), limb_width)?;
             c_limbs.push(AssignedLimb::<_, Fresh>::from(c_val));
             c_big = c_big.map(|b| b >> limb_width);
         }
         let c = AssignedInteger::new(&c_limbs);
+
+        // Assert that `a = b + c`.
         let added = self.add(ctx, b, &c)?;
         self.assert_equal_fresh(ctx, a, &added)?;
         Ok(c)

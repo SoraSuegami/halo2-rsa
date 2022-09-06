@@ -132,6 +132,24 @@
 //!                 
 //!                 // 6. Assert that `val0` is equal to `val1`.
 //!                 bigint_chip.assert_equal_fresh(ctx, &val0, &val1)?;
+//!
+//!                 // 7. We perform the same computation in the finite field.
+//!                 // Assert that inputs are in the order-`n` finite field.
+//!                 bigint_chip.assert_in_field(ctx, &a_assigned, &n_assigned)?;
+//!                 bigint_chip.assert_in_field(ctx, &b_assigned, &n_assigned)?;
+//!                 bigint_chip.assert_in_field(ctx, &c_assigned, &n_assigned)?;
+//!                 // `a_b_sum = a + b`.
+//!                 let a_b_sum = bigint_chip.add_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
+//!                 // `val0 = a_b_sum * c`.
+//!                 let val0 = bigint_chip.mul_mod(ctx, &a_b_sum, &c_assigned, &n_assigned)?;
+//!                 // `a_c_mul = a * c`.
+//!                 let a_c_mul = bigint_chip.mul_mod(ctx, &a_assigned, &c_assigned, &n_assigned)?;
+//!                 // `b_c_mul = b * c`.
+//!                 let b_c_mul = bigint_chip.mul_mod(ctx, &b_assigned, &c_assigned, &n_assigned)?;
+//!                 // `val1 = a_c_mul + b_c_mul`.
+//!                 let val1 = bigint_chip.add_mod(ctx, &a_c_mul, &b_c_mul, &n_assigned)?;
+//!                 bigint_chip.assert_equal_fresh(ctx, &val0, &val1)?;
+//!
 //!                 Ok(())
 //!             },
 //!         )?;
@@ -172,7 +190,7 @@
 //!      
 //!     // 4. Generate a proof.
 //!     let public_inputs = vec![vec![]];
-//!     let k = 14;
+//!     let k = 15;
 //!     let prover = match MockProver::run(k, &circuit, public_inputs) {
 //!         Ok(prover) => prover,
 //!         Err(e) => panic!("{:#?}", e)
