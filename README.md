@@ -1,5 +1,5 @@
 # halo2_rsa
-RSA verification circuit using halo2 library.
+**RSA verification circuit using halo2 library.**
 
 ## Features
 This library provides a RSA verification circuit compatible with the [halo2 library developed by privacy-scaling-explorations team](https://github.com/privacy-scaling-explorations/halo2).
@@ -50,7 +50,7 @@ cargo test
 This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/SoraSuegami/halo2_rsa/blob/main/LICENSE.md) file for details
 
 ## Acknowledgments
-We have developed our library by reference to [the circom-rsa-verify repository](https://github.com/zkp-application/circom-rsa-verify), which contains a circuit of pkcs1v15 signature verification in the circom language. 
+We have developed our library by reference to the [circom-rsa-verify repository](https://github.com/zkp-application/circom-rsa-verify), which contains a circuit of pkcs1v15 signature verification in the circom language. 
 It verifies signatures by first defining a circuit for modular multiplication of big integers and then using the circuit to perform modular exponentiation.
 
 We implemented our circuit using a similar approach.
