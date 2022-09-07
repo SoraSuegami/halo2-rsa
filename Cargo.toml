@@ -9,8 +9,8 @@ license = "MIT"
 [lib]
 
 [dependencies]
-maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
-halo2wrong =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0"}
+maingate =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "56639b615295e08e0ef145d8a0c3876f606a7c5c"}
+halo2wrong =   { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "56639b615295e08e0ef145d8a0c3876f606a7c5c"}
 num-bigint = { version = "0.4", features = ["rand"] }
 
 [dev-dependencies]

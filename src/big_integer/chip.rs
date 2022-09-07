@@ -64,7 +64,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Panics if the number of limbs of `integer` is not equivalent to `self.num_limbs`.
     fn assign_integer(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         integer: UnassignedInteger<F>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let range_gate = self.range_chip();
@@ -99,7 +99,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Panics if the number of limbs of `integer` is greater than `self.num_limbs`.
     fn assign_constant_fresh(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         integer: BigUint,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         // The number of limbs is `self.num_limbs`.
@@ -123,7 +123,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Panics if the number of limbs of `integer` is greater than `num_limbs_l + num_limbs_r - 1`.
     fn assign_constant_muled(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         integer: BigUint,
         num_limbs_l: usize,
         num_limbs_r: usize,
@@ -142,7 +142,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns a new [`AssignedInteger`]. Its each limb is equivalent to `2^(self.limb_width)-1`, and the number of its limbs is `num_limbs`.
     fn max_value(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         num_limbs: usize,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let mut limbs = Vec::with_capacity(num_limbs);
@@ -172,7 +172,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Panics if `self.limb_width` is not equal to `aux.limb_width` or `a.num_limbs()` is not equal to `aux.num_limbs_l + aux.num_limbs_r - 1`.
     fn refresh(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Muled>,
         aux: &RefreshAux,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
@@ -249,7 +249,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// The resulting number of limbs is equivalent to `max(a.num_limbs(), b.num_limbs()) + 1`.
     fn add(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
@@ -314,7 +314,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the result is equivalent to `b - a` and the bit is one.
     fn sub(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(AssignedInteger<F, Fresh>, AssignedValue<F>), Error> {
@@ -394,7 +394,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Its number of limbs is equivalent to `a.num_limbs() + b.num_limbs() - 1`.
     fn mul(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Muled>, Error> {
@@ -439,7 +439,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Its number of limbs is equivalent to `2 * a.num_limbs() - 1`.
     fn square(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Muled>, Error> {
         self.mul(ctx, a, a)
@@ -460,7 +460,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Before calling this function, you must assert that `a<n` and `b<n`.
     fn add_mod(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
@@ -507,7 +507,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Before calling this function, you must assert that `a<n` and `b<n`.
     fn sub_mod(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
@@ -556,7 +556,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Before calling this function, you must assert that `a<n` and `b<n`.
     fn mul_mod(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
@@ -656,7 +656,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Before calling this function, you must assert that `a<n`.
     fn square_mod(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
@@ -677,7 +677,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Before calling this function, you must assert that `a<n`.
     fn pow_mod(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         e: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
@@ -723,7 +723,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Before calling this function, you must assert that `a<n`.
     fn pow_mod_fixed_exp(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         e: &BigUint,
         n: &AssignedInteger<F, Fresh>,
@@ -767,7 +767,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_zero(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
@@ -793,7 +793,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_equal_fresh(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -835,7 +835,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_equal_muled(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Muled>,
         b: &AssignedInteger<F, Muled>,
         num_limbs_l: usize,
@@ -921,7 +921,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_less_than(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -945,7 +945,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_less_than_or_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -967,7 +967,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_greater_than(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -989,7 +989,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_greater_than_or_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -1011,7 +1011,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Otherwise, the bit is equivalent to zero.
     fn is_in_field(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -1029,7 +1029,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Reutrns [`Error`] if `a!=0`.
     fn assert_zero(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
         let eq_bit = self.is_zero(ctx, a)?;
@@ -1047,7 +1047,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a!=b`.
     fn assert_equal_fresh(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
@@ -1066,7 +1066,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a!=b`.
     fn assert_equal_muled(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Muled>,
         b: &AssignedInteger<F, Muled>,
         n1: usize,
@@ -1087,7 +1087,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a>=b`.
     fn assert_less_than(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
@@ -1106,7 +1106,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a>b`.
     fn assert_less_than_or_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
@@ -1125,7 +1125,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a<=b`.
     fn assert_greater_than(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
@@ -1144,7 +1144,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a<b`.
     fn assert_greater_than_or_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
@@ -1163,7 +1163,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Returns [`Error`] if `a` is not in the order-`n` finite field, i.e. `a>=n`.
     fn assert_in_field(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<(), Error> {
@@ -1265,7 +1265,7 @@ impl<F: FieldExt> BigIntChip<F> {
     /// Generic function to assign a constant integer.
     fn assign_constant<T: RangeType>(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         integer: BigUint,
         max_num_limbs: usize,
     ) -> Result<AssignedInteger<F, T>, Error> {
@@ -1299,7 +1299,7 @@ impl<F: FieldExt> BigIntChip<F> {
     /// Panics if `a<b`.
     fn sub_unchecked(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedInteger<F, Fresh>,
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
@@ -1338,7 +1338,7 @@ impl<F: FieldExt> BigIntChip<F> {
     /// Panics if `n=0`.
     fn div_mod_main_gate(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         n: &AssignedValue<F>,
     ) -> Result<(AssignedValue<F>, AssignedValue<F>), Error> {
@@ -1514,9 +1514,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random add test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let sum = &self.a + &self.b;
                     //let carry = &all_sum >> Self::BITS_LEN;
                     //let base = BigUint::from(1usize) << Self::BITS_LEN;
@@ -1556,9 +1556,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random add test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1592,9 +1592,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let b: BigUint = &self.b >> 8;
                     let sub = &self.a - &b;
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1632,9 +1632,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub test with an overflow case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = &self.a >> 1024;
                     let b: BigUint = self.b.clone();
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -1670,9 +1670,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let b: BigUint = &self.b >> 8;
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
@@ -1708,9 +1708,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random mul test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1743,9 +1743,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_muled test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1786,9 +1786,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_muled test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     assert!(self.a != BigUint::from(0usize));
                     assert!(self.b != BigUint::from(0usize));
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1836,9 +1836,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_fresh test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a1_unassigned = UnassignedInteger::from(a1_limbs);
                     let a2_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1871,9 +1871,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_equal_fresh test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     assert!(self.a != BigUint::from(0usize));
                     let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a1_unassigned = UnassignedInteger::from(a1_limbs);
@@ -1905,9 +1905,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random refresh test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1945,9 +1945,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "multiplication test with three integers",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -1992,9 +1992,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random add_mod test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -2032,9 +2032,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random add_mod test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -2071,9 +2071,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub_mod test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let sub = if &self.a >= &self.b {
                         &self.a - &self.b
                     } else {
@@ -2116,9 +2116,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random sub_mod test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -2155,9 +2155,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random mul_mod test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -2195,9 +2195,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random mul_mod test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
@@ -2234,9 +2234,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 5;
@@ -2277,9 +2277,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 5;
@@ -2319,9 +2319,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 7;
@@ -2360,9 +2360,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random pow_mod test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let e_bit = 7;
@@ -2400,9 +2400,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random is_zero test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     assert!(self.a != BigUint::from(0usize));
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
@@ -2437,9 +2437,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_less_than test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = &self.a >> 128;
                     let b = self.b.clone();
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2474,9 +2474,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_less_than test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone();
                     let b = self.b.clone() >> 128;
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2511,9 +2511,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_less_than_or_equal test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone();
                     let b = self.a.clone();
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2548,9 +2548,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_less_than_or_equal test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone();
                     let b = self.b.clone() >> 128;
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2585,9 +2585,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_greater_than test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone();
                     let b = self.a.clone() >> 128;
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2622,9 +2622,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_greater_than test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone() >> 128;
                     let b = self.b.clone();
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2659,9 +2659,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_greater_than_or_equal test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone();
                     let b = self.a.clone();
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2696,9 +2696,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_greater_than_or_equal test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a = self.a.clone() >> 128;
                     let b = self.b.clone();
                     let a_limbs = decompose_big::<F>(a, num_limbs, Self::LIMB_WIDTH);
@@ -2733,9 +2733,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_in_field test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
@@ -2770,9 +2770,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "random assert_in_field test with an error case",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
@@ -2801,9 +2801,9 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             layouter.assign_region(
                 || "1 * 1 = 1",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let one = bigint_chip.assign_constant_fresh(ctx, BigUint::from(1usize))?;
                     let n = one.num_limbs();
                     let one_muled = bigint_chip.mul(ctx, &one, &one)?;
@@ -2835,9 +2835,9 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             layouter.assign_region(
                 || "(1+0x+3x^2)(3+1x) = 3+1x+9x^2+3x^3",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big =
                         BigUint::from(1usize) + 0usize * &out_base + 3usize * &out_base * &out_base;
@@ -2878,9 +2878,9 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             layouter.assign_region(
                 || "(3 + 4x + 5x^2 + 6x^3)(9 + 10x + 11x^2 + 12x^3) =  27 + 66 x  + 118 x^2 + 184 x^3 + 163 x^4 + 126 x^5 + 72 x^6 ",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big =
                         BigUint::from(3usize) + 4usize * &out_base + 5usize * &out_base.pow(2) + 6usize * &out_base.pow(3);
@@ -2918,9 +2918,9 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             layouter.assign_region(
                 || "big square test",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big = BigUint::from(4819187580044832333u128)
                         + 9183764011217009606u128 * &out_base
@@ -3029,9 +3029,9 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             layouter.assign_region(
                 || "(1+x)(1+x+x^2) =  1 + 2x + 2x^2 + x^3",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big = BigUint::from(1usize) + 1usize * &out_base;
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
@@ -3071,9 +3071,9 @@ mod test {
             let bigint_chip = self.bigint_chip(config);
             layouter.assign_region(
                 || "(1+7x)(1+x+x^2) =  1 + 8x + 8x^2 + 7x^3",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let out_base = BigUint::from(1usize) << Self::LIMB_WIDTH;
                     let a_big = BigUint::from(1usize) + 7usize * &out_base;
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
@@ -3114,9 +3114,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "0 * (random) = 0 mod n",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let zero_big = BigUint::from(0usize);
                     let a_big = zero_big.clone();
                     let a_assigned = bigint_chip.assign_constant_fresh(ctx, a_big)?;
@@ -3155,9 +3155,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "n * 1 mod n = 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
@@ -3195,9 +3195,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "(n - 1) * (n - 1) mod n = 1",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let n_sub_1 = &self.n - &1u8;
                     let a_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
@@ -3237,9 +3237,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "(n - 1) * (n - 2) mod n = 2",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let n_sub_1 = &self.n - &1u8;
                     let a_limbs = decompose_big::<F>(n_sub_1.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
@@ -3280,9 +3280,9 @@ mod test {
             let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
             layouter.assign_region(
                 || "test derive traits",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let bigint_chip = bigint_chip.clone();

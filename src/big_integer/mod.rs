@@ -84,9 +84,9 @@
 //!
 //!         layouter.assign_region(
 //!             || "big-integer example",
-//!             |mut region| {
-//!                 let offset = &mut 0;
-//!                 let ctx = &mut RegionCtx::new(&mut region, offset);
+//!             |region| {
+//!                 let offset = 0;
+//!                 let ctx = &mut RegionCtx::new(region, offset);
 //!                 // 1. Decompose inputs into limbs.
 //!                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
 //!                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
