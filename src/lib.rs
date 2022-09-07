@@ -2,10 +2,11 @@ pub mod big_integer;
 //mod rsa_signature;
 mod chip;
 use big_integer::*;
-use chip::*;
+//use chip::*;
 //pub use rsa_signature::*;
-use halo2wrong::halo2::arithmetic::FieldExt;
+//use halo2wrong::halo2::arithmetic::FieldExt;
 
+/*
 #[derive(Clone, Debug)]
 pub struct RSAPublicKey<F: FieldExt> {
     n: UnassignedInteger<F>,
@@ -59,3 +60,4 @@ impl<F: FieldExt> AssignedRSASignature<F> {
         Self { c }
     }
 }
+*/

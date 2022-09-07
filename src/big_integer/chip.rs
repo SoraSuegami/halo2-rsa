@@ -39,7 +39,7 @@ impl BigIntConfig {
 }
 
 /// Chip for [`BigIntInstructions`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BigIntChip<F: FieldExt> {
     /// Chip configuration.
     config: BigIntConfig,
@@ -486,7 +486,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             res_limbs.push(AssignedLimb::<_, Fresh>::from(val));
         }
         for i in n.num_limbs()..num_limbs {
-            self.main_gate().assert_zero(ctx, &res_limbs[i].0)?;
+            self.main_gate()
+                .assert_zero(ctx, &res_limbs[i].assigned_val())?;
         }
         let res = AssignedInteger::new(&res_limbs[0..n.num_limbs()]);
         Ok(res)
@@ -534,7 +535,8 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             res_limbs.push(AssignedLimb::<_, Fresh>::from(val));
         }
         for i in n.num_limbs()..num_limbs {
-            self.main_gate().assert_zero(ctx, &res_limbs[i].0)?;
+            self.main_gate()
+                .assert_zero(ctx, &res_limbs[i].assigned_val())?;
         }
         let res = AssignedInteger::new(&res_limbs[0..n.num_limbs()]);
         Ok(res)
@@ -686,7 +688,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let e_bits = e
             .limbs()
             .into_iter()
-            .map(|limb| main_gate.to_bits(ctx, &limb.0, exp_limb_bits))
+            .map(|limb| main_gate.to_bits(ctx, &limb.assigned_val(), exp_limb_bits))
             .collect::<Result<Vec<Vec<AssignedValue<F>>>, Error>>()?
             .into_iter()
             .flatten()
@@ -699,7 +701,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             // If `e_bit = 1`, update `acc` to `acc * squared`. Otherwise, use the same `acc`.
             for j in 0..acc.num_limbs() {
                 let selected = main_gate.select(ctx, &muled.limb(j), &acc.limb(j), &e_bit)?;
-                acc.0[j] = AssignedLimb::from(selected);
+                acc.replace_limb(j, AssignedLimb::from(selected));
             }
             // Square `squared`.
             squared = self.square_mod(ctx, &squared, n)?;
@@ -772,7 +774,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         // If all of the limbs of `a` are zero, `assigned_bit` is one. Otherwise, `assigned_bit` is zero.
         let mut assigned_bit = main_gate.assign_bit(ctx, Value::known(F::one()))?;
         for limb in a.limbs().into_iter() {
-            let is_zero = main_gate.is_zero(ctx, &limb.0)?;
+            let is_zero = main_gate.is_zero(ctx, &limb.assigned_val())?;
             assigned_bit = main_gate.and(ctx, &assigned_bit, &is_zero)?;
         }
         Ok(assigned_bit)
@@ -1388,7 +1390,7 @@ impl<F: FieldExt> BigIntChip<F> {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
+    use std::{fmt::Debug, str::FromStr};
 
     use super::*;
     use halo2wrong::halo2::{
@@ -1398,7 +1400,6 @@ mod test {
 
     macro_rules! impl_bigint_test_circuit {
         ($circuit_name:ident, $test_fn_name:ident, $limb_width:expr, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
-            #[derive(Clone, Debug)]
             struct $circuit_name<F: FieldExt> {
                 a: BigUint,
                 b: BigUint,
@@ -1530,11 +1531,6 @@ mod test {
                         bigint_chip.assign_constant(ctx, sum, Self::BITS_LEN + 1)?;
                     let added = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
                     bigint_chip.assert_equal_fresh(ctx, &sum_assigned_int, &added)?;
-                    /*bigint_chip.main_gate().assert_equal_to_constant(
-                        ctx,
-                        &added.1 .0,
-                        big_to_fe(carry),
-                    )?;*/
                     Ok(())
                 },
             )?;
@@ -2412,11 +2408,10 @@ mod test {
                     let a_unassigned = UnassignedInteger::from(a_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let zero = bigint_chip.assign_constant_fresh(ctx, BigUint::from(0usize))?;
+                    bigint_chip.assert_zero(ctx, &zero)?;
                     let a_is_zero = bigint_chip.is_zero(ctx, &a_assigned)?;
-                    let zero_is_zero = bigint_chip.is_zero(ctx, &zero)?;
                     let main_gate = bigint_chip.main_gate();
                     main_gate.assert_zero(ctx, &a_is_zero)?;
-                    main_gate.assert_one(ctx, &zero_is_zero)?;
                     Ok(())
                 },
             )?;
@@ -3269,4 +3264,70 @@ mod test {
             Ok(())
         }
     );
+
+    impl_bigint_test_circuit!(
+        TestDeriveTraitsCircuit,
+        test_derive_traits,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "test derive traits",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let bigint_chip = bigint_chip.clone();
+                    format!("{bigint_chip:?}");
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let a_assigned = a_assigned.clone();
+                    format!("{a_assigned:?}");
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestUnimplemented,
+        test_unimplemented_circuit,
+        64,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    );
+
+    #[test]
+    #[should_panic]
+    fn test_unimplemented() {
+        use halo2wrong::curves::bn256::Fq;
+        let a = BigUint::default();
+        let b = BigUint::default();
+        let n = BigUint::default();
+        let circuit = TestUnimplemented::<Fq> {
+            a,
+            b,
+            n,
+            _f: PhantomData,
+        };
+        circuit.without_witnesses();
+    }
 }

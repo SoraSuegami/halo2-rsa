@@ -244,12 +244,12 @@ impl<F: FieldExt, T: RangeType> From<AssignedLimb<F, T>> for AssignedValue<F> {
     }
 }
 
-impl<F: FieldExt, T: RangeType> From<&AssignedLimb<F, T>> for AssignedValue<F> {
+/*impl<F: FieldExt, T: RangeType> From<&AssignedLimb<F, T>> for AssignedValue<F> {
     /// The reference of [`AssignedLimb`] can be also represented as [`AssignedValue`].
     fn from(limb: &AssignedLimb<F, T>) -> Self {
         limb.0.clone()
     }
-}
+}*/
 
 impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
     /// Constructs new [`AssignedLimb`] from an assigned value.
@@ -263,41 +263,14 @@ impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
         AssignedLimb::<_, T>(value, PhantomData)
     }
 
-    /// Returns the witness value as [`Value<Limb<F>>`].
-    pub fn limb(&self) -> Value<Limb<F>> {
-        self.0.value().map(|value| Limb::new(*value))
-    }
-
-    /// Returns the witness value as [`Value<F>`].
-    pub fn value(&self) -> Value<F> {
-        self.0.value().cloned()
-    }
-
-    /// Returns the witness value as [`Value<BigUint>`].
-    pub fn to_big_uint(&self) -> Value<BigUint> {
-        self.value().map(|f| fe_to_big(f))
+    /// Returns the witness value as [`AssignedValue<F>`].
+    pub fn assigned_val(&self) -> AssignedValue<F> {
+        self.0.clone()
     }
 
     /// Converts the [`RangeType`] from [`Fresh`] to [`Muled`].
     pub fn to_muled(self) -> AssignedLimb<F, Muled> {
         AssignedLimb::<F, Muled>(self.0, PhantomData)
-    }
-}
-
-/// Limb that is about to be assigned.
-#[derive(Debug, Clone)]
-pub struct Limb<F: FieldExt>(F);
-
-impl<F: FieldExt> Limb<F> {
-    /// Creates a new [`Limb`]
-    ///
-    /// # Arguments
-    /// * value - a witness value.
-    ///
-    /// # Return values
-    /// Returns a new [`Limb`]
-    pub fn new(value: F) -> Self {
-        Self(value)
     }
 }
 
@@ -394,6 +367,15 @@ impl<F: FieldExt, T: RangeType> AssignedInteger<F, T> {
         )
     }
 
+    /// Replaces the specified limb to the given value.
+    ///
+    /// # Arguments
+    /// * idx - index of the modified limb.
+    /// * limb - new limb.
+    pub fn replace_limb(&mut self, idx: usize, limb: AssignedLimb<F, T>) {
+        self.0[idx] = limb;
+    }
+
     /// Increases the number of the limbs by adding the given [`AssignedValue<F>`] representing zero.
     ///
     /// # Arguments
@@ -473,7 +455,7 @@ impl RefreshAux {
         }
         let mut increased_limbs_vec = Vec::new();
         let mut cur_d = 0;
-        let mut max_d = d;
+        let max_d = d;
         while cur_d <= max_d {
             let num_chunks = if muled[cur_d].bits() % (limb_width as u64) == 0 {
                 muled[cur_d].bits() / (limb_width as u64)
@@ -481,9 +463,9 @@ impl RefreshAux {
                 muled[cur_d].bits() / (limb_width as u64) + 1
             } as usize;
             increased_limbs_vec.push(num_chunks - 1);
-            if max_d < cur_d + num_chunks - 1 {
+            /*if max_d < cur_d + num_chunks - 1 {
                 max_d = cur_d + num_chunks - 1;
-            }
+            }*/
             let mut chunks = Vec::with_capacity(num_chunks);
             for _ in 0..num_chunks {
                 chunks.push(&muled[cur_d] & &max_limb);
@@ -512,6 +494,29 @@ impl RefreshAux {
 mod test {
     use super::*;
     use rand::{thread_rng, Rng};
+
+    #[test]
+    fn test_debug_and_clone_traits() {
+        use halo2wrong::curves::pasta::Fp as F;
+
+        let fresh = Fresh {};
+        let fresh = fresh.clone();
+        assert_eq!(format!("{fresh:?}"), "Fresh");
+        let muled = Muled {};
+        let muled = muled.clone();
+        assert_eq!(format!("{muled:?}"), "Muled");
+
+        let unassigned_int = UnassignedInteger::from(vec![F::one()]);
+        let unassigned_int = unassigned_int.clone();
+        assert_eq!(format!("{unassigned_int:?}"), "UnassignedInteger { value: Value { inner: Some([0x0000000000000000000000000000000000000000000000000000000000000001]) }, num_limbs: 1 }");
+
+        let limb_width = 32;
+        let num_limbs_l = 1usize;
+        let num_limbs_r = 1usize;
+        let aux = RefreshAux::new(limb_width, num_limbs_l, num_limbs_r);
+        let aux = aux.clone();
+        assert_eq!(format!("{aux:?}"),"RefreshAux { limb_width: 32, num_limbs_l: 1, num_limbs_r: 1, increased_limbs_vec: [1, 0] }");
+    }
 
     #[test]
     fn test_refresh_aux_random() {
