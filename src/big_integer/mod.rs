@@ -208,10 +208,7 @@ pub use chip::*;
 pub use instructions::*;
 
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value};
-use maingate::{
-    big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
-    MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
-};
+use maingate::{fe_to_big, AssignedValue};
 use num_bigint::BigUint;
 
 /// Trait for types representing a range of the limb.

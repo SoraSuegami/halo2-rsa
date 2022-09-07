@@ -53,7 +53,7 @@ pub struct BigIntChip<F: FieldExt> {
 impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Assigns a variable [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
     ///
-    /// # Arguments
+    /// # Argu&ments
     /// * `ctx` - a region context.
     /// * `integer` - a variable integer to assign.
     ///
@@ -322,7 +322,9 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         // It prevents the subtraction　result from being negative.
         let n2 = b.num_limbs();
         let max_int = self.max_value(ctx, n2)?;
+        // The number of limbs of `inflated_a` is `max(a.num_limbs(), b.num_limbs()) + 1`.
         let inflated_a = self.add(ctx, a, &max_int)?;
+        // The number of limbs of `inflated_subed` is `max(a.num_limbs(), b.num_limbs()) + 1`.
         let inflated_subed = self.sub_unchecked(ctx, &inflated_a, b)?;
 
         let main_gate = self.main_gate();
@@ -333,11 +335,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let is_not_overflowed = main_gate.is_equal(ctx, &inflated_subed.limb(n2), &one)?;
         let is_overflowed = main_gate.not(ctx, &is_not_overflowed)?;
 
-        let num_limbs_l = if n2 > inflated_subed.num_limbs() {
-            n2
-        } else {
-            inflated_subed.num_limbs()
-        };
+        let num_limbs_l = inflated_subed.num_limbs();
         let num_limbs_r = if a.num_limbs() > n2 {
             a.num_limbs()
         } else {
@@ -357,8 +355,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
                     &zero_value,
                     &is_not_overflowed,
                 )?
-            } else if i >= inflated_subed.num_limbs() {
-                main_gate.select(ctx, &zero_value, &b.limb(i), &is_not_overflowed)?
             } else {
                 main_gate.select(ctx, &inflated_subed.limb(i), &b.limb(i), &is_not_overflowed)?
             };
@@ -469,15 +465,11 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         // 2. Compute `a + b - n`.
         // 3. If the subtraction is overflowed, i.e. `a + b < n`, returns `a + b`. Otherwise, returns `a + b - n`.
         let mut added = self.add(ctx, a, b)?;
-        let (mut subed, is_overflowed) = self.sub(ctx, &added, n)?;
-        let num_limbs = if added.num_limbs() > subed.num_limbs() {
-            added.num_limbs()
-        } else {
-            subed.num_limbs()
-        };
+        // The number of limbs of `subed` is `added.num_limbs() = max(a.num_limbs(), b.num_limbs()) + 1`.
+        let (subed, is_overflowed) = self.sub(ctx, &added, n)?;
+        let num_limbs = subed.num_limbs();
         let zero_value = self.main_gate().assign_constant(ctx, F::zero())?;
         added.extend_limbs(num_limbs - added.num_limbs(), zero_value.clone());
-        subed.extend_limbs(num_limbs - subed.num_limbs(), zero_value);
         let mut res_limbs = Vec::with_capacity(num_limbs);
         for i in 0..num_limbs {
             let val =
@@ -515,18 +507,16 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         // 1. Compute `a - b`.
         // 2. Compute `n - (b - a) = a - b + n`.
         // 3. If the subtraction in 1 is overflowed, i.e. `a - b < 0`, returns `a - b + n`. Otherwise, returns `a - b`.
+        // The number of limbs of `subed1` is `max(a.num_limbs(), b.num_limbs())`.
         let (mut subed1, is_overflowed1) = self.sub(ctx, a, b)?;
         // If `is_overflowed1=1`, `subed2` is equal to `a - b + n` because `subed1` is `b - a` in that case.
-        let (mut subed2, is_overflowed2) = self.sub(ctx, n, &subed1)?;
+        // The number of limbs of `subed2` is `max(n.num_limbs(), subed1.num_limbs()) >= subed1.num_limbs()`.
+        let (subed2, is_overflowed2) = self.sub(ctx, n, &subed1)?;
         self.main_gate().assert_zero(ctx, &is_overflowed2)?;
-        let num_limbs = if subed1.num_limbs() > subed2.num_limbs() {
-            subed1.num_limbs()
-        } else {
-            subed2.num_limbs()
-        };
+        let num_limbs = subed2.num_limbs();
         let zero_value = self.main_gate().assign_constant(ctx, F::zero())?;
         subed1.extend_limbs(num_limbs - subed1.num_limbs(), zero_value.clone());
-        subed2.extend_limbs(num_limbs - subed2.num_limbs(), zero_value);
+        //subed2.extend_limbs(num_limbs - subed2.num_limbs(), zero_value);
         let mut res_limbs = Vec::with_capacity(num_limbs);
         for i in 0..num_limbs {
             let val =
@@ -1304,11 +1294,9 @@ impl<F: FieldExt> BigIntChip<F> {
         b: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         let limb_width = self.limb_width;
-        let max_n = if a.num_limbs() < b.num_limbs() {
-            b.num_limbs()
-        } else {
-            a.num_limbs()
-        };
+        // If `a.num_limbs() < b.num_limbs()`, in other words `a < b`, this function will panic.
+        assert!(a.num_limbs() >= b.num_limbs());
+        let max_n = a.num_limbs();
         let range_chip = self.range_chip();
         let a_big = a.to_big_uint(limb_width);
         let b_big = b.to_big_uint(limb_width);
@@ -2091,6 +2079,49 @@ mod test {
                     let ab = bigint_chip.sub_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
                     let sub_assigned = bigint_chip.assign_constant_fresh(ctx, sub)?;
                     bigint_chip.assert_equal_fresh(ctx, &ab, &sub_assigned)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_composition_tables(&mut layouter)?;
+            range_chip.load_overflow_tables(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestSubModOverflowCircuit,
+        test_sub_mod_overflow_circuit,
+        64,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let bigint_chip = self.bigint_chip(config);
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "random sub_mod overflow test",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let a_unassigned = UnassignedInteger::from(a_limbs);
+                    let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
+                    let b_unassigned = UnassignedInteger::from(b_limbs);
+                    let n_limbs =
+                        decompose_big::<F>(self.n.clone() >> 1024, num_limbs, Self::LIMB_WIDTH);
+                    println!(
+                        "a - b ?< n {}",
+                        (&self.a - (&self.b >> 128)) < (&self.n >> 1024)
+                    );
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
+                    let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
+                    let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
+                    bigint_chip.sub_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
                     Ok(())
                 },
             )?;
