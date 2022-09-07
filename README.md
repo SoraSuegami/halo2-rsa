@@ -1,6 +1,9 @@
 # halo2_rsa
 **RSA verification circuit using halo2 library.**
 
+## Disclaimer
+DO NOT USE THIS LIBRARY IN PRODUCTION. At this point, this is under development. It has known and unknown bugs and security flaws.
+
 ## Features
 This library provides a RSA verification circuit compatible with the [halo2 library developed by privacy-scaling-explorations team](https://github.com/privacy-scaling-explorations/halo2).
 It will allow halo2 developers to write circuits for verifying RSA-based cryptographic schemes such as RSA signature, RSA accumulator, and verifiable delay function.
