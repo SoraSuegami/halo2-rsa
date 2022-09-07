@@ -3,8 +3,6 @@ use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::{AssignedValue, RegionCtx};
 use num_bigint::BigUint;
 
-use super::AssignedLimb;
-
 /// Instructions for big-integer operations.
 pub trait BigIntInstructions<F: FieldExt> {
     /// Assigns a variable [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].

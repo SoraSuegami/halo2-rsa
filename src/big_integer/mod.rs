@@ -244,13 +244,6 @@ impl<F: FieldExt, T: RangeType> From<AssignedLimb<F, T>> for AssignedValue<F> {
     }
 }
 
-/*impl<F: FieldExt, T: RangeType> From<&AssignedLimb<F, T>> for AssignedValue<F> {
-    /// The reference of [`AssignedLimb`] can be also represented as [`AssignedValue`].
-    fn from(limb: &AssignedLimb<F, T>) -> Self {
-        limb.0.clone()
-    }
-}*/
-
 impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
     /// Constructs new [`AssignedLimb`] from an assigned value.
     ///

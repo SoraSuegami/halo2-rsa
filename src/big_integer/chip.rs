@@ -1390,7 +1390,7 @@ impl<F: FieldExt> BigIntChip<F> {
 
 #[cfg(test)]
 mod test {
-    use std::{fmt::Debug, str::FromStr};
+    use std::str::FromStr;
 
     use super::*;
     use halo2wrong::halo2::{
