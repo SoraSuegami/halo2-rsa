@@ -3,7 +3,6 @@ pub mod big_integer;
 mod chip;
 use big_integer::*;
 //use chip::*;
-//pub use rsa_signature::*;
 //use halo2wrong::halo2::arithmetic::FieldExt;
 
 /*
