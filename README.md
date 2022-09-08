@@ -32,6 +32,7 @@ The RSAChip is under development.
 You can install and build our library with the following commands.
 ```bash
 git clone https://github.com/SoraSuegami/halo2_rsa.git
+cd halo2_rsa
 cargo build --release
 ```
 
