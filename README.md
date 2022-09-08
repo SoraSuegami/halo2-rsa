@@ -26,6 +26,7 @@ The RSAChip is under development.
 
 ## Requirement
 - rustc 1.65.0-nightly (0b79f758c 2022-08-18)
+- cargo 1.65.0-nightly (9809f8ff3 2022-08-16)
 
 ## Installation and Build
 You can install and build our library with the following commands.
