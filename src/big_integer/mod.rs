@@ -155,8 +155,8 @@
 //!         )?;
 //!         // Create lookup tables for range check in `range_chip`.
 //!         let range_chip = bigint_chip.range_chip();
-//!         range_chip.load_composition_tables(&mut layouter)?;
-//!         range_chip.load_overflow_tables(&mut layouter)?;
+//!         range_chip.load_table(&mut layouter)?;
+//!         //range_chip.load_overflow_tables(&mut layouter)?;
 //!         Ok(())
 //!     }
 //! }
@@ -328,7 +328,7 @@ impl<F: FieldExt, T: RangeType> AssignedInteger<F, T> {
     ///
     /// # Return values
     /// Returns the specified limb as [`AssignedValue<F>`].
-    fn limb(&self, idx: usize) -> AssignedValue<F> {
+    pub fn limb(&self, idx: usize) -> AssignedValue<F> {
         self.0[idx].clone().into()
     }
 

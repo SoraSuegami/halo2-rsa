@@ -660,6 +660,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// * `a` - input of square.
     /// * `e` - a variable exponent whose type is [`AssignedInteger<F, Fresh>`].
     /// * `n` - a modulus.
+    /// * `exp_limb_bits` - the width of each limb when the e is decomposed.
     ///
     /// # Return values
     /// Returns the modular power result `a^e mod n` as [`AssignedInteger<F, Fresh>`].
@@ -1523,8 +1524,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1559,8 +1560,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1599,8 +1600,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1637,8 +1638,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1675,8 +1676,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1710,8 +1711,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1753,8 +1754,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1803,8 +1804,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1838,8 +1839,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1872,8 +1873,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1912,8 +1913,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1959,8 +1960,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -1999,8 +2000,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2038,8 +2039,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2083,8 +2084,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2126,8 +2127,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2165,8 +2166,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2205,8 +2206,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2244,8 +2245,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2287,8 +2288,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2329,8 +2330,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2370,8 +2371,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2410,8 +2411,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2447,8 +2448,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2484,8 +2485,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2521,8 +2522,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2558,8 +2559,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2595,8 +2596,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2632,8 +2633,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2669,8 +2670,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2706,8 +2707,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2743,8 +2744,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2780,8 +2781,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2812,8 +2813,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2846,8 +2847,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2889,8 +2890,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -2929,8 +2930,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3040,8 +3041,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3082,8 +3083,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3124,8 +3125,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3165,8 +3166,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3205,8 +3206,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3247,8 +3248,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3290,8 +3291,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
@@ -3325,8 +3326,8 @@ mod test {
                 },
             )?;
             let range_chip = bigint_chip.range_chip();
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
+            //range_chip.load_overflow_tables(&mut layouter)?;
             Ok(())
         }
     );
