@@ -71,7 +71,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let limb_width = self.limb_width;
         let num_limbs = integer.num_limbs();
         // `integer.num_limbs() == self.num_limbs`.
-        assert_eq!(num_limbs, self.num_limbs);
+        //assert_eq!(num_limbs, self.num_limbs);
         // Assign each limb as `AssignedValue`.
         let values = (0..num_limbs)
             .map(|i| {
@@ -1165,7 +1165,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
 
 impl<F: FieldExt> BigIntChip<F> {
     /// The number of lookup column used in the [`RangeChip`].
-    const NUM_LOOKUP_LIMBS: usize = 8;
+    pub(crate) const NUM_LOOKUP_LIMBS: usize = 8;
 
     /// Create a new [`BigIntChip`] from the configuration and parameters.
     ///
@@ -1382,6 +1382,7 @@ mod test {
     use std::str::FromStr;
 
     use super::*;
+    use crate::big_pow_mod;
     use halo2wrong::halo2::{
         circuit::SimpleFloorPlanner,
         plonk::{Circuit, ConstraintSystem},
@@ -1469,23 +1470,6 @@ mod test {
                 run::<PastaFq>();
             }
         };
-    }
-
-    fn big_pow_mod(a: &BigUint, b: &BigUint, n: &BigUint) -> BigUint {
-        let one = BigUint::from(1usize);
-        let two = BigUint::from(2usize);
-        if b == &BigUint::default() {
-            return one;
-        }
-        let is_odd = b % &two == one;
-        let b = if is_odd { b - &one } else { b.clone() };
-        let x = big_pow_mod(a, &(&b / &two), n);
-        let x2 = (&x * &x) % n;
-        if is_odd {
-            (a * &x2) % n
-        } else {
-            x2
-        }
     }
 
     impl_bigint_test_circuit!(

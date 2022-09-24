@@ -202,10 +202,12 @@
 
 mod chip;
 mod instructions;
+mod utils;
 use std::marker::PhantomData;
 
 pub use chip::*;
 pub use instructions::*;
+pub use utils::*;
 
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value};
 use maingate::{fe_to_big, AssignedValue};

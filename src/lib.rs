@@ -28,14 +28,7 @@ pub struct RSAPublicKey<F: FieldExt> {
 }
 
 impl<F: FieldExt> RSAPublicKey<F> {
-    const FIXED_E: u128 = 65537;
-    pub fn new(n: UnassignedInteger<F>, e: UnassignedInteger<F>) -> Self {
-        let e = RSAPubE::Var(e);
-        Self { n, e }
-    }
-
-    pub fn new_with_fixed_e(n: UnassignedInteger<F>, e: BigUint) -> Self {
-        let e = RSAPubE::Fix(e);
+    pub fn new(n: UnassignedInteger<F>, e: RSAPubE<F>) -> Self {
         Self { n, e }
     }
 }

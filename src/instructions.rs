@@ -33,7 +33,7 @@ pub trait RSAInstructions<F: FieldExt> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         public_key: &AssignedRSAPublicKey<F>,
-        message: &[AssignedValue<F>],
+        hashed_msg: &AssignedInteger<F, Fresh>,
         signature: &AssignedRSASignature<F>,
     ) -> Result<AssignedValue<F>, Error>;
 }
