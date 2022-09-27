@@ -5,7 +5,6 @@ use crate::{
     AssignedRSAPubE, AssignedRSAPublicKey, AssignedRSASignature, Fresh, Muled, RSAInstructions,
     RSAPubE, RSAPublicKey, RSASignature, RangeType, RefreshAux, UnassignedInteger,
 };
-use halo2_gadgets::sha256::{Sha256, Sha256Digest, Sha256Instructions, Table16Chip, Table16Config};
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 use maingate::{
     big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
@@ -26,8 +25,7 @@ impl RSAConfig {
     /// Creates new [`RSAConfig`] from [`BigIntConfig`].
     ///
     /// # Arguments
-    /// * range_config - a configuration for [`RangeChip`].
-    /// * main_gate_config - a configuration for [`MainGate`].
+    /// * bigint_config - a configuration for [`BigIntChip`].
     ///
     /// # Return values
     /// Returns new [`RSAConfig`].
@@ -50,6 +48,13 @@ pub struct RSAChip<F: FieldExt> {
 
 impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
     /// Assigns a [`AssignedRSAPublicKey`].
+    ///
+    /// # Arguments
+    /// * `ctx` - a region context.
+    /// * `public_key` - a RSA public key to assign.
+    ///
+    /// # Return values
+    /// Returns a new [`AssignedRSAPublicKey`].
     fn assign_public_key(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -65,6 +70,13 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
     }
 
     /// Assigns a [`AssignedRSASignature`].
+    ///
+    /// # Arguments
+    /// * `ctx` - a region context.
+    /// * `signature` - a RSA signature to assign.
+    ///
+    /// # Return values
+    /// Returns a new [`AssignedRSASignature`].
     fn assign_signature(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -75,6 +87,15 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
         Ok(AssignedRSASignature::new(c))
     }
 
+    /// Given a base `x`, a RSA public key (e,n), performs the modular power `x^e mod n`.
+    ///
+    /// # Arguments
+    /// * `ctx` - a region context.
+    /// * `x` - a base integer.
+    /// * `public_key` - an assigned RSA public key.
+    ///
+    /// # Return values
+    /// Returns the modular power result `x^e mod n` as [`AssignedInteger<F, Fresh>`].
     fn modpow_public_key(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -92,6 +113,18 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
         Ok(powed)
     }
 
+    /// Given a RSA public key, a message hashed with SHA256, and a pkcs1v15 signature, verifies the signature with the public key and the hashed messaged.
+    ///
+    /// # Arguments
+    /// * `ctx` - a region context.
+    /// * `public_key` - an assigned RSA public key.
+    /// * `hashed_msg` - an assigned integer of the message hashed with SHA256.
+    /// * `signature` - an assigned pkcs1v15 signature.
+    ///
+    /// # Return values
+    /// Returns the assigned bit as `AssignedValue<F>`.
+    /// If `signature` is valid for `public_key` and `hashed_msg`, the bit is equivalent to one.
+    /// Otherwise, the bit is equivalent to zero.
     fn verify_pkcs1v15_signature(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -154,7 +187,7 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
             let is_ff_64_eq = main_gate.is_equal(ctx, &powed.limb(i), &ff_64)?;
             is_eq = main_gate.and(ctx, &is_eq, &is_ff_64_eq)?;
         }
-        //0b1111111111111111111111111111111111111111111111111 = 0x00 || 0x01 || (0xff)^*
+        //562949953421311 = 0b1111111111111111111111111111111111111111111111111 = 0x00 || 0x01 || (0xff)^*
         let last_em =
             main_gate.assign_constant(ctx, big_to_fe(BigUint::from(562949953421311u64)))?;
         let is_last_em_eq = main_gate.is_equal(ctx, &powed.limb(31), &last_em)?;
@@ -164,14 +197,14 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
 }
 
 impl<F: FieldExt> RSAChip<F> {
-    const LIMB_WIDTH: usize = 64;
+    pub const LIMB_WIDTH: usize = 64;
 
     /// Create a new [`RSAChip`] from the configuration and parameters.
     ///
     /// # Arguments
     /// * config - a configuration for [`RSAChip`].
-    /// * limb_width - the bit length of [`Fresh`] type limbs in this chip.
     /// * bits_len - the default bit length of [`Fresh`] type integers in this chip.
+    /// * exp_limb_bits - the width of each limb when the exponent is decomposed.
     ///
     /// # Return values
     /// Returns a new [`RSAChip`]
@@ -201,6 +234,20 @@ impl<F: FieldExt> RSAChip<F> {
     /// Getter for [`MainGate`].
     pub fn main_gate(&self) -> MainGate<F> {
         self.bigint_chip().main_gate()
+    }
+
+    /// Returns the bit length parameters necessary to configure the [`RangeChip`].
+    ///
+    /// # Arguments
+    /// * num_limbs - the default number of limbs of [`Fresh`] integers.
+    ///
+    /// # Return values
+    /// Returns a vector of composition bit lengthes (`composition_bit_lens`) and a vector of overflow bit lengthes (`overflow_bit_lens`), which are necessary for [`RangeConfig`].
+    pub fn compute_range_lens(num_limbs: usize) -> (Vec<usize>, Vec<usize>) {
+        let (mut composition_bit_lens, overflow_bit_lens) =
+            BigIntChip::<F>::compute_range_lens(Self::LIMB_WIDTH, num_limbs);
+        composition_bit_lens.push(32 / BigIntChip::<F>::NUM_LOOKUP_LIMBS);
+        (composition_bit_lens, overflow_bit_lens)
     }
 }
 
@@ -244,8 +291,7 @@ mod test {
                 fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                     let main_gate_config = MainGate::<F>::configure(meta);
                     let (composition_bit_lens, overflow_bit_lens) =
-                        BigIntChip::<F>::compute_range_lens(
-                            Self::LIMB_WIDTH,
+                        RSAChip::<F>::compute_range_lens(
                             Self::BITS_LEN / Self::LIMB_WIDTH,
                         );
                     let range_config = RangeChip::<F>::configure(
@@ -533,12 +579,10 @@ mod test {
 
                 fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                     let main_gate_config = MainGate::<F>::configure(meta);
-                    let (mut composition_bit_lens, overflow_bit_lens) =
-                        BigIntChip::<F>::compute_range_lens(
-                            Self::LIMB_WIDTH,
+                    let (composition_bit_lens, overflow_bit_lens) =
+                        RSAChip::<F>::compute_range_lens(
                             Self::BITS_LEN / Self::LIMB_WIDTH,
                         );
-                    composition_bit_lens.push(32 / BigIntChip::<F>::NUM_LOOKUP_LIMBS);
                     let range_config = RangeChip::<F>::configure(
                         meta,
                         &main_gate_config,
@@ -556,10 +600,7 @@ mod test {
             #[test]
             fn $test_fn_name() {
                 use halo2wrong::halo2::dev::MockProver;
-                use num_bigint::RandomBits;
-                use rand::{thread_rng, Rng};
                 fn run<F: FieldExt>() {
-                    let mut rng = thread_rng();
                     let circuit = $circuit_name::<F> {
                         _f: PhantomData
                     };
