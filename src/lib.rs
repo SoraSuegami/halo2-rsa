@@ -113,7 +113,6 @@ impl<F: Field> RSASignatureVerifier<F> {
                 let offset = 0;
                 let ctx = &mut RegionCtx::new(region, offset);
                 let mut assigned_limbs = Vec::with_capacity(bytes_len / limb_bytes);
-
                 for i in 0..(bytes_len / limb_bytes) {
                     let mut limb_val = main_gate.assign_constant(ctx, F::zero())?;
                     for j in 0..limb_bytes {
@@ -151,6 +150,7 @@ mod test {
         plonk::{Circuit, ConstraintSystem},
     };
     use num_bigint::BigUint;
+    use rand::{thread_rng, Rng};
     use rsa::*;
     use sha2::{Digest, Sha256};
     use std::marker::PhantomData;
@@ -221,8 +221,6 @@ mod test {
             #[test]
             fn $test_fn_name() {
                 use halo2wrong::halo2::dev::MockProver;
-                use num_bigint::RandomBits;
-                use rand::{thread_rng, Rng};
                 fn run<F: Field>() {
                     let mut rng = thread_rng();
                     let private_key = RsaPrivateKey::new(&mut rng, $circuit_name::<F>::BITS_LEN).expect("failed to generate a key");
@@ -287,6 +285,260 @@ mod test {
                     let mut sign = self
                         .private_key
                         .sign(padding, &hashed_msg)
+                        .expect("fail to sign a hashed message.");
+                    sign.reverse();
+                    let sign_big = BigUint::from_bytes_le(&sign);
+                    let sign_limbs = decompose_big::<F>(sign_big.clone(), num_limbs, limb_width);
+                    let sign_unassigned = UnassignedInteger::from(sign_limbs);
+                    let sign = RSASignature::new(sign_unassigned);
+                    let sign = rsa_chip.assign_signature(ctx, sign)?;
+                    let n_big =
+                        BigUint::from_radix_le(&self.public_key.n().clone().to_radix_le(16), 16)
+                            .unwrap();
+                    let n_limbs = decompose_big::<F>(n_big.clone(), num_limbs, limb_width);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let e_fix = RSAPubE::Fix(BigUint::from(Self::DEFAULT_E));
+                    let public_key = RSAPublicKey::new(n_unassigned, e_fix);
+                    let public_key = rsa_chip.assign_public_key(ctx, public_key)?;
+                    Ok((public_key, sign))
+                },
+            )?;
+            let mut verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
+            let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
+                layouter.namespace(|| "verify pkcs1v15 signature"),
+                &public_key,
+                &self.msg,
+                &signature,
+            )?;
+            for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                main_gate.expose_public(
+                    layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    limb.assigned_val(),
+                    i,
+                )?;
+            }
+            let num_limb_n = public_key.n.num_limbs();
+            for (i, val) in hashed_msg.into_iter().enumerate() {
+                main_gate.expose_public(
+                    layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
+                    val,
+                    num_limb_n + i,
+                )?;
+            }
+            layouter.assign_region(
+                || "assert is_valid==1",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    main_gate.assert_one(ctx, &is_valid)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_table(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_rsa_signature_test_circuit!(
+        TestRSASignatureWithHashConfig2,
+        TestRSASignatureWithHashCircuit2,
+        test_rsa_signature_with_hash_circuit2,
+        1024,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let rsa_chip = self.rsa_chip(config.rsa_config);
+            let sha256_chip = self.sha256_chip(config.sha256_config);
+            let bigint_chip = rsa_chip.bigint_chip();
+            let main_gate = rsa_chip.main_gate();
+            let limb_width = Self::LIMB_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            let (public_key, signature) = layouter.assign_region(
+                || "rsa signature with hash test using 1024 bits public keys",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    let hashed_msg = Sha256::digest(&self.msg);
+                    let padding = PaddingScheme::PKCS1v15Sign {
+                        hash: Some(Hash::SHA2_256),
+                    };
+                    let mut sign = self
+                        .private_key
+                        .sign(padding, &hashed_msg)
+                        .expect("fail to sign a hashed message.");
+                    sign.reverse();
+                    let sign_big = BigUint::from_bytes_le(&sign);
+                    let sign_limbs = decompose_big::<F>(sign_big.clone(), num_limbs, limb_width);
+                    let sign_unassigned = UnassignedInteger::from(sign_limbs);
+                    let sign = RSASignature::new(sign_unassigned);
+                    let sign = rsa_chip.assign_signature(ctx, sign)?;
+                    let n_big =
+                        BigUint::from_radix_le(&self.public_key.n().clone().to_radix_le(16), 16)
+                            .unwrap();
+                    let n_limbs = decompose_big::<F>(n_big.clone(), num_limbs, limb_width);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let e_fix = RSAPubE::Fix(BigUint::from(Self::DEFAULT_E));
+                    let public_key = RSAPublicKey::new(n_unassigned, e_fix);
+                    let public_key = rsa_chip.assign_public_key(ctx, public_key)?;
+                    Ok((public_key, sign))
+                },
+            )?;
+            let mut verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
+            let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
+                layouter.namespace(|| "verify pkcs1v15 signature"),
+                &public_key,
+                &self.msg,
+                &signature,
+            )?;
+            for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                main_gate.expose_public(
+                    layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    limb.assigned_val(),
+                    i,
+                )?;
+            }
+            let num_limb_n = public_key.n.num_limbs();
+            for (i, val) in hashed_msg.into_iter().enumerate() {
+                main_gate.expose_public(
+                    layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
+                    val,
+                    num_limb_n + i,
+                )?;
+            }
+            layouter.assign_region(
+                || "assert is_valid==1",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    main_gate.assert_one(ctx, &is_valid)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_table(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_rsa_signature_test_circuit!(
+        TestRSASignatureWithHashConfig3,
+        TestRSASignatureWithHashCircuit3,
+        test_rsa_signature_with_hash_circuit3,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let rsa_chip = self.rsa_chip(config.rsa_config);
+            let sha256_chip = self.sha256_chip(config.sha256_config);
+            let bigint_chip = rsa_chip.bigint_chip();
+            let main_gate = rsa_chip.main_gate();
+            let limb_width = Self::LIMB_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            let (public_key, signature) = layouter.assign_region(
+                || "rsa signature with hash test using 2048 bits public keys: invalid signed message case",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    let hashed_msg = Sha256::digest(&self.msg);
+                    let padding = PaddingScheme::PKCS1v15Sign {
+                        hash: Some(Hash::SHA2_256),
+                    };
+                    let mut rng = thread_rng();
+                    let invalid_private_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate a key");
+                    let mut sign = invalid_private_key
+                        .sign(padding, &hashed_msg)
+                        .expect("fail to sign a hashed message.");
+                    sign.reverse();
+                    let sign_big = BigUint::from_bytes_le(&sign);
+                    let sign_limbs = decompose_big::<F>(sign_big.clone(), num_limbs, limb_width);
+                    let sign_unassigned = UnassignedInteger::from(sign_limbs);
+                    let sign = RSASignature::new(sign_unassigned);
+                    let sign = rsa_chip.assign_signature(ctx, sign)?;
+                    let n_big =
+                        BigUint::from_radix_le(&self.public_key.n().clone().to_radix_le(16), 16)
+                            .unwrap();
+                    let n_limbs = decompose_big::<F>(n_big.clone(), num_limbs, limb_width);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let e_fix = RSAPubE::Fix(BigUint::from(Self::DEFAULT_E));
+                    let public_key = RSAPublicKey::new(n_unassigned, e_fix);
+                    let public_key = rsa_chip.assign_public_key(ctx, public_key)?;
+                    Ok((public_key, sign))
+                },
+            )?;
+            let mut verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
+            let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
+                layouter.namespace(|| "verify pkcs1v15 signature"),
+                &public_key,
+                &self.msg,
+                &signature,
+            )?;
+            for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                main_gate.expose_public(
+                    layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    limb.assigned_val(),
+                    i,
+                )?;
+            }
+            let num_limb_n = public_key.n.num_limbs();
+            for (i, val) in hashed_msg.into_iter().enumerate() {
+                main_gate.expose_public(
+                    layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
+                    val,
+                    num_limb_n + i,
+                )?;
+            }
+            layouter.assign_region(
+                || "assert is_valid==1",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    main_gate.assert_one(ctx, &is_valid)?;
+                    Ok(())
+                },
+            )?;
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_table(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_rsa_signature_test_circuit!(
+        TestRSASignatureWithHashConfig4,
+        TestRSASignatureWithHashCircuit4,
+        test_rsa_signature_with_hash_circuit4,
+        2048,
+        true,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let rsa_chip = self.rsa_chip(config.rsa_config);
+            let sha256_chip = self.sha256_chip(config.sha256_config);
+            let bigint_chip = rsa_chip.bigint_chip();
+            let main_gate = rsa_chip.main_gate();
+            let limb_width = Self::LIMB_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            let (public_key, signature) = layouter.assign_region(
+                || "rsa signature with hash test using 2048 bits public keys: invalid public key case",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    let hashed_msg = Sha256::digest(&self.msg);
+                    let padding = PaddingScheme::PKCS1v15Sign {
+                        hash: Some(Hash::SHA2_256),
+                    };
+                    let invalid_msg = [1; 32];
+                    let mut sign = self
+                        .private_key
+                        .sign(padding, &invalid_msg)
                         .expect("fail to sign a hashed message.");
                     sign.reverse();
                     let sign_big = BigUint::from_bytes_le(&sign);

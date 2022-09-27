@@ -183,14 +183,18 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
         is_eq = main_gate.and(ctx, &is_eq, &is_ff_32_eq)?;
         let ff_64 =
             main_gate.assign_constant(ctx, big_to_fe(BigUint::from(18446744073709551615u64)))?;
-        for i in (hash_len + 3)..31 {
+        for i in (hash_len + 3)..(self.bits_len / Self::LIMB_WIDTH - 1) {
             let is_ff_64_eq = main_gate.is_equal(ctx, &powed.limb(i), &ff_64)?;
             is_eq = main_gate.and(ctx, &is_eq, &is_ff_64_eq)?;
         }
         //562949953421311 = 0b1111111111111111111111111111111111111111111111111 = 0x00 || 0x01 || (0xff)^*
         let last_em =
             main_gate.assign_constant(ctx, big_to_fe(BigUint::from(562949953421311u64)))?;
-        let is_last_em_eq = main_gate.is_equal(ctx, &powed.limb(31), &last_em)?;
+        let is_last_em_eq = main_gate.is_equal(
+            ctx,
+            &powed.limb(self.bits_len / Self::LIMB_WIDTH - 1),
+            &last_em,
+        )?;
         is_eq = main_gate.and(ctx, &is_eq, &is_last_em_eq)?;
         Ok(is_eq)
     }
