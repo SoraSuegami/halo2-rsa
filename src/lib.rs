@@ -381,6 +381,7 @@ impl<F: Field> RSASignatureVerifier<F> {
         msg: &[u8],
         signature: &AssignedRSASignature<F>,
     ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error> {
+        // 1. Compute the SHA256 hash of the input bytes.
         let inputs = vec![msg.to_vec()];
         let hashed_bytes = self
             .sha256_chip
@@ -391,6 +392,8 @@ impl<F: Field> RSASignatureVerifier<F> {
         let limb_bytes = RSAChip::<F>::LIMB_WIDTH / 8;
         let rsa_chip = self.rsa_chip.clone();
         let main_gate = rsa_chip.main_gate();
+
+        // 2. Verify `signature` with `public_key` and `hashed_bytes`.
         let is_valid = layouter.assign_region(
             || "verify pkcs1v15 signature",
             |region| {
