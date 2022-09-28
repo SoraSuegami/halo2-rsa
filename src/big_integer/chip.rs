@@ -59,9 +59,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns a new [`AssignedInteger`]. The bit length of each limb is less than `self.limb_width`, and the number of its limbs is `self.num_limbs`.
-    ///
-    /// # Panics
-    /// Panics if the number of limbs of `integer` is not equivalent to `self.num_limbs`.
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -70,8 +67,6 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let range_gate = self.range_chip();
         let limb_width = self.limb_width;
         let num_limbs = integer.num_limbs();
-        // `integer.num_limbs() == self.num_limbs`.
-        //assert_eq!(num_limbs, self.num_limbs);
         // Assign each limb as `AssignedValue`.
         let values = (0..num_limbs)
             .map(|i| {
@@ -386,7 +381,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the multiplication result `a * b` as [`AssignedInteger<F, Muled>`].
-    /// Its range type is [`Muled`] because its limb may overflow the maximum value of the [`Fresh`] type limb, i.e. `2^(self.limb_width)-1`.
+    /// Its range type is [`Muled`] because its limb may overflow the maximum value of the [`Fresh`] type limb, i.e., `2^(self.limb_width)-1`.
     /// Its number of limbs is equivalent to `a.num_limbs() + b.num_limbs() - 1`.
     fn mul(
         &self,
@@ -396,7 +391,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<AssignedInteger<F, Muled>, Error> {
         // The following constraints are designed with reference to PolynomialMultiplier template in https://github.com/jacksoom/circom-bigint/blob/master/circuits/mult.circom.
         // However, unlike the circom-bigint implementation, we do not adopt the xJsnark's multiplication technique in https://akosba.github.io/papers/xjsnark.pdf, where the order of constraints is only O(n).
-        // This is because addition is not free, i.e. it makes constraints as well as multiplication, in the Plonk constraints system.
+        // This is because addition is not free, i.e., it makes constraints as well as multiplication, in the Plonk constraints system.
         let d0 = a.num_limbs();
         let d1 = b.num_limbs();
         let d = d0 + d1 - 1;
@@ -431,7 +426,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ///
     /// # Return values
     /// Returns the square result `a^2` as [`AssignedInteger<F, Muled>`].
-    /// Its range type is [`Muled`] because its limb may overflow the maximum value of the [`Fresh`] type limb, i.e. `2^(self.limb_width)-1`.
+    /// Its range type is [`Muled`] because its limb may overflow the maximum value of the [`Fresh`] type limb, i.e., `2^(self.limb_width)-1`.
     /// Its number of limbs is equivalent to `2 * a.num_limbs() - 1`.
     fn square(
         &self,
@@ -463,7 +458,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         // 1. Compute `a + b`.
         // 2. Compute `a + b - n`.
-        // 3. If the subtraction is overflowed, i.e. `a + b < n`, returns `a + b`. Otherwise, returns `a + b - n`.
+        // 3. If the subtraction is overflowed, i.e., `a + b < n`, returns `a + b`. Otherwise, returns `a + b - n`.
         let mut added = self.add(ctx, a, b)?;
         // The number of limbs of `subed` is `added.num_limbs() = max(a.num_limbs(), b.num_limbs()) + 1`.
         let (subed, is_overflowed) = self.sub(ctx, &added, n)?;
@@ -506,7 +501,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         // 1. Compute `a - b`.
         // 2. Compute `n - (b - a) = a - b + n`.
-        // 3. If the subtraction in 1 is overflowed, i.e. `a - b < 0`, returns `a - b + n`. Otherwise, returns `a - b`.
+        // 3. If the subtraction in 1 is overflowed, i.e., `a - b < 0`, returns `a - b + n`. Otherwise, returns `a - b`.
         // The number of limbs of `subed1` is `max(a.num_limbs(), b.num_limbs())`.
         let (mut subed1, is_overflowed1) = self.sub(ctx, a, b)?;
         // If `is_overflowed1=1`, `subed2` is equal to `a - b + n` because `subed1` is `b - a` in that case.
@@ -552,7 +547,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedInteger<F, Fresh>, Error> {
         // The following constraints are designed with reference to AsymmetricMultiplierReducer template in https://github.com/jacksoom/circom-bigint/blob/master/circuits/mult.circom.
-        // However, we do not regroup multiple limbs like the circom-bigint implementation because addition is not free, i.e. it makes constraints as well as multiplication, in the Plonk constraints system.
+        // However, we do not regroup multiple limbs like the circom-bigint implementation because addition is not free, i.e., it makes constraints as well as multiplication, in the Plonk constraints system.
         // Besides, we use lookup tables to optimize range checks.
         let limb_width = self.limb_width;
         let n1 = a.num_limbs();
@@ -609,7 +604,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         let quotient_int = AssignedInteger::new(&quotient_limbs);
         let prod_int = AssignedInteger::new(&prod_limbs);
 
-        // 5. Assert `a * b = quotient_int * n + prod_int`, i.e. `prod_int = (a * b) mod n`.
+        // 5. Assert `a * b = quotient_int * n + prod_int`, i.e., `prod_int = (a * b) mod n`.
         let ab = self.mul(ctx, a, b)?;
         let qn = self.mul(ctx, &quotient_int, n)?;
         let n_sum = n1 + n2;
@@ -1006,7 +1001,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
         a: &AssignedInteger<F, Fresh>,
         n: &AssignedInteger<F, Fresh>,
     ) -> Result<AssignedValue<F>, Error> {
-        // Return if `a<n`, i.e. `0<=a<n`.
+        // Return if `a<n`, i.e., `0<=a<n`.
         self.is_less_than(ctx, a, n)
     }
 
@@ -1151,7 +1146,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// * `n` - a modulus.
     ///
     /// # Return values
-    /// Returns [`Error`] if `a` is not in the order-`n` finite field, i.e. `a>=n`.
+    /// Returns [`Error`] if `a` is not in the order-`n` finite field, i.e., `a>=n`.
     fn assert_in_field(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -2098,10 +2093,6 @@ mod test {
                     let b_unassigned = UnassignedInteger::from(b_limbs);
                     let n_limbs =
                         decompose_big::<F>(self.n.clone() >> 1024, num_limbs, Self::LIMB_WIDTH);
-                    println!(
-                        "a - b ?< n {}",
-                        (&self.a - (&self.b >> 128)) < (&self.n >> 1024)
-                    );
                     let n_unassigned = UnassignedInteger::from(n_limbs);
                     let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
                     let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
