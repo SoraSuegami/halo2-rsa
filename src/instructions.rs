@@ -4,7 +4,6 @@ use crate::{
 };
 use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::{AssignedValue, RegionCtx};
-use num_bigint::BigUint;
 
 /// Instructions for RSA operations.
 pub trait RSAInstructions<F: FieldExt> {

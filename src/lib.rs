@@ -588,8 +588,12 @@ mod test {
                 },
             )?;
             let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
-            let (is_valid, hashed_msg) =
-                verifier.verify_pkcs1v15_signature(layouter, &public_key, &self.msg, &signature)?;
+            let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
+                layouter.namespace(|| "verify pkcs1v15 signature"),
+                &public_key,
+                &self.msg,
+                &signature,
+            )?;
             for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
                 main_gate.expose_public(
                     layouter.namespace(|| format!("expose {} th public key limb", i)),
