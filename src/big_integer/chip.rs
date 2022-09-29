@@ -726,7 +726,7 @@ impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
             })
             .collect::<Vec<bool>>();
         let e_bits = e_bits[0..num_e_bits].to_vec();
-        let mut acc = self.assign_constant_fresh(ctx, BigUint::from(1usize))?;
+        let mut acc = self.assign_constant(ctx, BigUint::from(1usize), a.num_limbs())?;
         let mut squared = a.clone();
         for e_bit in e_bits.into_iter() {
             let cur_sq = squared;

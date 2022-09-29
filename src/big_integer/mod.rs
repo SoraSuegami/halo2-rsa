@@ -1,6 +1,6 @@
 //! A module for big integer operations.
 //!
-//! A chip in this module, [`BigIntChip`], defines constraints for big integers, i.e. integers whose size is larger than that of the native field of the arithmetic circuit.
+//! A chip in this module, [`BigIntChip`], defines constraints for big integers, i.e., integers whose size is larger than that of the native field of the arithmetic circuit.
 //! The big integer consists of multiple values in the native field, and these values are called limbs.
 //! The assigned limb and integer, [`AssignedLimb`] and [`AssignedInteger`], have one of the following two range types: [`Fresh`] and [`Muled`].
 //! The [`Fresh`] type is allocated to the integers that are not multiplied yet, and the [`Muled`] type is allocated after they are multiplied.
@@ -156,7 +156,6 @@
 //!         // Create lookup tables for range check in `range_chip`.
 //!         let range_chip = bigint_chip.range_chip();
 //!         range_chip.load_table(&mut layouter)?;
-//!         //range_chip.load_overflow_tables(&mut layouter)?;
 //!         Ok(())
 //!     }
 //! }

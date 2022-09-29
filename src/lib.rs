@@ -588,12 +588,8 @@ mod test {
                 },
             )?;
             let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
-            let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
-                layouter.namespace(|| "verify pkcs1v15 signature"),
-                &public_key,
-                &self.msg,
-                &signature,
-            )?;
+            let (is_valid, hashed_msg) =
+                verifier.verify_pkcs1v15_signature(layouter, &public_key, &self.msg, &signature)?;
             for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
                 main_gate.expose_public(
                     layouter.namespace(|| format!("expose {} th public key limb", i)),
@@ -876,4 +872,99 @@ mod test {
             Ok(())
         }
     );
+
+    impl_rsa_signature_test_circuit!(
+        TestDeriveTraitsConfig,
+        TestDeriveTraitsCircuit,
+        test_derive_traits,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let config = config.clone();
+            format!("{config:?}");
+            let rsa_chip = self.rsa_chip(config.rsa_config);
+            let sha256_chip = self.sha256_chip(config.sha256_config);
+            let bigint_chip = rsa_chip.bigint_chip();
+            let limb_width = Self::LIMB_WIDTH;
+            let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+            layouter.assign_region(
+                || "rsa signature with hash test using 2048 bits public keys: invalid private key case",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    let hashed_msg = Sha256::digest(&self.msg);
+                    let padding = PaddingScheme::PKCS1v15Sign {
+                        hash: Some(Hash::SHA2_256),
+                    };
+                    let mut sign = self
+                        .private_key
+                        .sign(padding, &hashed_msg)
+                        .expect("fail to sign a hashed message.");
+                    sign.reverse();
+                    let sign_big = BigUint::from_bytes_le(&sign);
+                    let sign_limbs = decompose_big::<F>(sign_big.clone(), num_limbs, limb_width);
+                    let sign_unassigned = UnassignedInteger::from(sign_limbs);
+                    let sign = RSASignature::new(sign_unassigned).clone();
+                    format!("{sign:?}");
+                    let sign = rsa_chip.assign_signature(ctx, sign)?.clone();
+                    format!("{sign:?}");
+                    let n_big =
+                        BigUint::from_radix_le(&self.public_key.n().clone().to_radix_le(16), 16)
+                            .unwrap();
+                    let n_limbs = decompose_big::<F>(n_big.clone(), num_limbs, limb_width);
+                    let n_unassigned = UnassignedInteger::from(n_limbs);
+                    let e_fix = RSAPubE::Fix(BigUint::from(Self::DEFAULT_E));
+                    let public_key = RSAPublicKey::new(n_unassigned, e_fix).clone();
+                    format!("{public_key:?}");
+                    let public_key = rsa_chip.assign_public_key(ctx, public_key)?.clone();
+                    format!("{public_key:?}");
+                    Ok((public_key, sign))
+                },
+            )?;
+            let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip).clone();
+            format!("{verifier:?}");
+            let range_chip = bigint_chip.range_chip();
+            range_chip.load_table(&mut layouter)?;
+            Ok(())
+        }
+    );
+
+    impl_rsa_signature_test_circuit!(
+        TestUnimplementedConfig,
+        TestUnimplemented,
+        test_rsa_signature_with_hash_unimplemented,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    );
+
+    #[test]
+    #[should_panic]
+    fn test_unimplemented() {
+        let mut rng = thread_rng();
+        let private_key = RsaPrivateKey::new(&mut rng, TestUnimplemented::<BnFr>::BITS_LEN)
+            .expect("failed to generate a key");
+        let public_key = RsaPublicKey::from(&private_key);
+        let mut msg: [u8; 128] = [0; 128];
+        for i in 0..128 {
+            msg[i] = rng.gen();
+        }
+        let circuit = TestUnimplemented::<BnFr> {
+            private_key,
+            public_key,
+            msg: msg.to_vec(),
+            _f: PhantomData,
+        };
+        circuit.without_witnesses();
+    }
 }

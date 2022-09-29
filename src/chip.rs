@@ -265,6 +265,10 @@ mod test {
         plonk::{Circuit, ConstraintSystem},
     };
 
+    use halo2wrong::halo2::dev::MockProver;
+    use num_bigint::RandomBits;
+    use rand::{thread_rng, Rng};
+
     macro_rules! impl_rsa_modpow_test_circuit {
         ($circuit_name:ident, $test_fn_name:ident, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
             struct $circuit_name<F: FieldExt> {
@@ -314,9 +318,6 @@ mod test {
 
             #[test]
             fn $test_fn_name() {
-                use halo2wrong::halo2::dev::MockProver;
-                use num_bigint::RandomBits;
-                use rand::{thread_rng, Rng};
                 fn run<F: FieldExt>() {
                     let mut rng = thread_rng();
                     let bits_len = $circuit_name::<F>::BITS_LEN as u64;
@@ -557,6 +558,59 @@ mod test {
         }
     );
 
+    impl_rsa_modpow_test_circuit!(
+        TestDeriveTraitsCircuit,
+        test_derive_traits,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            let rsa_chip = self.rsa_chip(config).clone();
+            format!("{rsa_chip:?}");
+            Ok(())
+        }
+    );
+
+    impl_rsa_modpow_test_circuit!(
+        TestUnimplemented1,
+        test_rsa_signature_with_hash_unimplemented1,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    );
+
+    #[test]
+    #[should_panic]
+    fn test_unimplemented1() {
+        use halo2wrong::curves::bn256::Fq as F;
+        let mut rng = thread_rng();
+        let bits_len = TestUnimplemented1::<F>::BITS_LEN as u64;
+        let mut n = BigUint::default();
+        while n.bits() != bits_len {
+            n = rng.sample(RandomBits::new(bits_len));
+        }
+        let e = rng.sample::<BigUint, _>(RandomBits::new(
+            TestUnimplemented1::<F>::EXP_LIMB_BITS as u64,
+        )) % &n;
+        let x = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+        let circuit = TestUnimplemented1::<F> {
+            n,
+            e,
+            x,
+            _f: PhantomData,
+        };
+        circuit.without_witnesses();
+    }
+
     macro_rules! impl_rsa_signature_test_circuit {
         ($circuit_name:ident, $test_fn_name:ident, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
             struct $circuit_name<F: FieldExt> {
@@ -761,4 +815,26 @@ mod test {
             Ok(())
         }
     );
+
+    impl_rsa_signature_test_circuit!(
+        TestUnimplemented2,
+        test_rsa_signature_circuit_unimplemented,
+        2048,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+    );
+
+    #[test]
+    #[should_panic]
+    fn test_unimplemented2() {
+        use halo2wrong::curves::bn256::Fq as F;
+        let circuit = TestUnimplemented2::<F> { _f: PhantomData };
+        circuit.without_witnesses();
+    }
 }
