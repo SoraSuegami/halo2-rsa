@@ -79,7 +79,7 @@
 //!         // 5. Configure `RSAConfig`.
 //!         let rsa_config = RSAConfig::new(bigint_config);
 //!         // 6. Configure `Sha256BitConfig`.
-//!         let sha256_config = Sha256BitConfig::<F>::configure(meta,F::from(123456));
+//!         let sha256_config = Sha256BitConfig::<F>::configure(meta);
 //!         Self::Config {
 //!             rsa_config,
 //!             sha256_config
@@ -489,7 +489,7 @@ mod test {
                     );
                     let bigint_config = BigIntConfig::new(range_config, main_gate_config);
                     let rsa_config = RSAConfig::new(bigint_config);
-                    let sha256_config = Sha256BitConfig::<F>::configure(meta,F::from(123456));
+                    let sha256_config = Sha256BitConfig::<F>::configure(meta);
                     Self::Config {
                         rsa_config,
                         sha256_config

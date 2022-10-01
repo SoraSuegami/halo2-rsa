@@ -16,13 +16,12 @@ You can perform various operations of the big integers, e.g. allocation, additio
 2. RSAChip
 
 The RSAChip defines constraints for verifying the RSA relations.
-That is, for integers `x, e, n`, it computes `x^e mod n`.
+That is, for the integer `x` and RSA public key `(n, e)`, it computes `x^e mod n`.
 Moreover, it also supports the verification of [pkcs1v15 signatures](https://www.rfc-editor.org/rfc/rfc3447).
 
 ### Current Development Status
-We have completed the development of the BigIntChip, which is placed in the big_integer module.
-
-The RSAChip is under development.
+We have completed the development of both chips.
+The BigIntChip and RSAChip is placed in the big_integer module and top module, respectively.
 
 ## Requirement
 - rustc 1.65.0-nightly (0b79f758c 2022-08-18)
@@ -59,5 +58,5 @@ We have developed our library by reference to the [circom-rsa-verify repository]
 It verifies signatures by first defining a circuit for modular multiplication of big integers and then using the circuit to perform modular exponentiation.
 
 We implemented our circuit using a similar approach.
-In addition, the range check, that is the verification of whether a given integer is within a certain range, was optimized using a lookup table.
-This optimization reduces the proving time of the existing circuit.
+In addition, the range check, the verification of whether a given integer is within a certain range, was optimized using a lookup table.
+This optimization allows the prover to prove that multiple integers are in the specified range in batch.
