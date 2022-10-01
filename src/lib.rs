@@ -439,8 +439,6 @@ mod test {
     use sha2::{Digest, Sha256};
     use std::marker::PhantomData;
 
-    struct RSASignatureTest {}
-
     macro_rules! impl_rsa_signature_test_circuit {
         ($config_name:ident, $circuit_name:ident, $test_fn_name:ident, $bits_len:expr, $should_be_error:expr, $( $synth:tt )*) => {
             #[derive(Debug,Clone)]

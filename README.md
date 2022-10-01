@@ -1,4 +1,4 @@
-# halo2_rsa
+# halo2-rsa
 **RSA verification circuit using halo2 library.**
 
 ## Disclaimer
@@ -60,4 +60,4 @@ It verifies signatures by first defining a circuit for modular multiplication of
 
 We implemented our circuit using a similar approach.
 In addition, the range check, that is the verification of whether a given integer is within a certain range, was optimized using a lookup table.
-This optimization reduces the constraints of the existing circuit.
+This optimization reduces the proving time of the existing circuit.
