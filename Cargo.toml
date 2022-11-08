@@ -7,6 +7,7 @@ description = "RSA verification circuit in halo2."
 license = "MIT"
 
 [lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "ed953b054b906b64787dc9a8cbefc0db4be9f8fa"}
