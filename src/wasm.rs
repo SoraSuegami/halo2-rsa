@@ -28,8 +28,8 @@ use maingate::{
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
 };
 use num_bigint::BigUint;
-use rand::rngs::OsRng;
-use rsa::{PublicKeyParts, RsaPublicKey};
+use rand::{rngs::OsRng, thread_rng};
+use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
 use std::{io::BufReader, marker::PhantomData, ops::SubAssign};
 use wasm_bindgen::prelude::*;
@@ -159,12 +159,10 @@ impl<F: Field> Circuit<F> for RSAWasm<F> {
     }
 }
 
-fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
-    ParamsKZG::<Bn256>::setup(k, OsRng)
-}
-
 #[wasm_bindgen]
 pub fn prove(params_js: JsValue, msg_js: JsValue, signature_js: JsValue, public_key_js: JsValue) {
+    console_error_panic_hook::set_once();
+
     let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg_js).unwrap();
     let mut sign: Vec<u8> = serde_wasm_bindgen::from_value(signature_js).unwrap();
     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key_js).unwrap();
@@ -218,9 +216,39 @@ pub fn prove(params_js: JsValue, msg_js: JsValue, signature_js: JsValue, public_
     );
 }
 
-// #[wasm_bindgen]
+#[wasm_bindgen]
+pub fn sample_rsa_key() -> JsValue {
+    let mut rng = thread_rng();
+    let private_key =
+        RsaPrivateKey::new(&mut rng, RSAWasm::<F>::BITS_LEN).expect("failed to generate a key");
+    serde_wasm_bindgen::to_value(&private_key).unwrap()
+}
 
-// pub fn verify(params: JsValue) {}
+#[wasm_bindgen]
+pub fn public_key(pk: JsValue) -> JsValue {
+    let pk: RsaPrivateKey = serde_wasm_bindgen::from_value(pk).unwrap();
+    let pub_key = RsaPublicKey::from(pk);
+    serde_wasm_bindgen::to_value(&pub_key).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn sign(pk: JsValue, msg: JsValue) -> JsValue {
+    let pk: RsaPrivateKey = serde_wasm_bindgen::from_value(pk).unwrap();
+    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let hashed_msg = Sha256::digest(&msg);
+
+    let padding = PaddingScheme::PKCS1v15Sign {
+        hash: Some(Hash::SHA2_256),
+    };
+    let mut sign = pk
+        .sign(padding, &hashed_msg)
+        .expect("fail to sign a hashed message.");
+    serde_wasm_bindgen::to_value(&sign).unwrap()
+}
+
+fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
+    ParamsKZG::<Bn256>::setup(k, OsRng)
+}
 
 #[cfg(test)]
 mod tests {
@@ -240,36 +268,36 @@ mod tests {
     }
 
     // #[wasm_bindgen_test]
-    // fn test_wasm() {
-    //     let mut params_file = File::open("params.bin").unwrap();
-    //     let mut params_buf = vec![];
-    //     params_file.read_to_end(&mut params_buf);
-    //     let params_js = serde_wasm_bindgen::to_value(&params_buf).unwrap();
+    fn test_wasm() {
+        let mut params_file = File::open("params.bin").unwrap();
+        let mut params_buf = vec![];
+        params_file.read_to_end(&mut params_buf);
+        let params_js = serde_wasm_bindgen::to_value(&params_buf).unwrap();
 
-    //     // 1. Uniformly sample a RSA key pair.
-    //     let mut rng = thread_rng();
-    //     let private_key =
-    //         RsaPrivateKey::new(&mut rng, RSAWasm::<F>::BITS_LEN).expect("failed to generate a key");
-    //     let public_key = RsaPublicKey::from(&private_key);
-    //     // 2. Uniformly sample a message.
-    //     let mut msg: [u8; 128] = [0; 128];
-    //     for i in 0..128 {
-    //         msg[i] = rng.gen();
-    //     }
-    //     // 3. Compute the SHA256 hash of `msg`.
-    //     let hashed_msg = Sha256::digest(&msg);
-    //     // 4. Generate a pkcs1v15 signature.
-    //     let padding = PaddingScheme::PKCS1v15Sign {
-    //         hash: Some(Hash::SHA2_256),
-    //     };
-    //     let mut sign = private_key
-    //         .sign(padding, &hashed_msg)
-    //         .expect("fail to sign a hashed message.");
+        // 1. Uniformly sample a RSA key pair.
+        let mut rng = thread_rng();
+        let private_key =
+            RsaPrivateKey::new(&mut rng, RSAWasm::<F>::BITS_LEN).expect("failed to generate a key");
+        let public_key = RsaPublicKey::from(&private_key);
+        // 2. Uniformly sample a message.
+        let mut msg: [u8; 128] = [0; 128];
+        for i in 0..128 {
+            msg[i] = rng.gen();
+        }
+        // 3. Compute the SHA256 hash of `msg`.
+        let hashed_msg = Sha256::digest(&msg);
+        // 4. Generate a pkcs1v15 signature.
+        let padding = PaddingScheme::PKCS1v15Sign {
+            hash: Some(Hash::SHA2_256),
+        };
+        let mut sign = private_key
+            .sign(padding, &hashed_msg)
+            .expect("fail to sign a hashed message.");
 
-    //     let msg_js = serde_wasm_bindgen::to_value(&msg.to_vec()).unwrap();
-    //     let signature_js = serde_wasm_bindgen::to_value(&sign).unwrap();
-    //     let public_key_js = serde_wasm_bindgen::to_value(&public_key).unwrap();
+        let msg_js = serde_wasm_bindgen::to_value(&msg.to_vec()).unwrap();
+        let signature_js = serde_wasm_bindgen::to_value(&sign).unwrap();
+        let public_key_js = serde_wasm_bindgen::to_value(&public_key).unwrap();
 
-    //     // prove(params_js, msg_js, signature_js, public_key_js);
-    // }
+        // prove(params_js, msg_js, signature_js, public_key_js);
+    }
 }
