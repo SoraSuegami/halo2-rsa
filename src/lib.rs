@@ -224,6 +224,7 @@ use big_integer::*;
 pub use chip::*;
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 pub use instructions::*;
+mod wasm;
 use maingate::{
     big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
