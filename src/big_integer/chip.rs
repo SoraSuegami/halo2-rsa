@@ -53,7 +53,7 @@ pub struct BigIntChip<F: FieldExt> {
 impl<F: FieldExt> BigIntInstructions<F> for BigIntChip<F> {
     /// Assigns a variable [`AssignedInteger`] whose [`RangeType`] is [`Fresh`].
     ///
-    /// # Argu&ments
+    /// # Arguments
     /// * `ctx` - a region context.
     /// * `integer` - a variable integer to assign.
     ///
