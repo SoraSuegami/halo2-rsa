@@ -21,3 +21,8 @@ sha2 = "0.10.6"
 [dev-dependencies]
 rand = "0.8.5"
 rsa = "0.6.1"
+criterion = "0.4"
+
+[[bench]]
+name = "verify_pkcs1v15_1024"
+harness = false
