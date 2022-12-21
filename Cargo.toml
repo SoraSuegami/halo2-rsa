@@ -10,12 +10,12 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "ed953b054b906b64787dc9a8cbefc0db4be9f8fa"}
-halo2wrong =  { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "ed953b054b906b64787dc9a8cbefc0db4be9f8fa"}
-halo2_sha256 = { git = "https://github.com/SoraSuegami/halo2_sha256.git", version = "0.1.0"}
+maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "63bde545d934e69c806ef9bc8b18f03f6ec0fe8e" }
+halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "63bde545d934e69c806ef9bc8b18f03f6ec0fe8e" }
+halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha256.git", version = "0.1.0" }
 num-bigint = { version = "0.4", features = ["rand"] }
-zkevm-circuits = { git = "https://github.com/SoraSuegami/zkevm-circuits.git", version = "0.1.0"}
-eth-types = { git = "https://github.com/SoraSuegami/zkevm-circuits.git", version = "0.1.0"}
+#zkevm-circuits = { git = "https://github.com/SoraSuegami/zkevm-circuits.git", version = "0.1.0" }
+#eth-types = { git = "https://github.com/SoraSuegami/zkevm-circuits.git", version = "0.1.0" }
 sha2 = "0.10.6"
 
 [dev-dependencies]

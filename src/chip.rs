@@ -7,8 +7,8 @@ use crate::{
 };
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 use maingate::{
-    big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
-    MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+    big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateInstructions, RangeChip,
+    RangeConfig, RangeInstructions, RegionCtx,
 };
 
 use num_bigint::BigUint;
@@ -137,7 +137,6 @@ impl<F: FieldExt> RSAInstructions<F> for RSAChip<F> {
         let powed = self.modpow_public_key(ctx, &signature.c, public_key)?;
         let hash_len = 4;
         // 1. Check hashed data
-        //let sha256 = Sha256::new(table16_chip, ctx.into()).expect("Fail to build a sha256 chip");
         // 64 * 4 = 256 bit, that is the first 4 numbers.
         for i in 0..hash_len {
             let is_hash_eq = main_gate.is_equal(ctx, &powed.limb(i), &hashed_msg.limb(i))?;

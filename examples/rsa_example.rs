@@ -2,14 +2,17 @@
 //! The circuit constraints are satisfied if and only if the following conditions hold.
 //! 1. The resulting hash of the given message is equal to the given hash.
 //! 2. The given signature is valid for the given public key and hash.
+use halo2_dynamic_sha256::{Sha256Chip, Sha256Config, Table16Chip};
 use halo2_rsa::{
     big_integer::{BigIntConfig, UnassignedInteger},
-    Field, RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey, RSASignature,
-    RSASignatureVerifier, Sha256BitChip, Sha256BitConfig,
+    RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
 };
-use halo2wrong::halo2::{
-    circuit::SimpleFloorPlanner,
-    plonk::{Circuit, ConstraintSystem, Error},
+use halo2wrong::{
+    curves::FieldExt,
+    halo2::{
+        circuit::SimpleFloorPlanner,
+        plonk::{Circuit, ConstraintSystem, Error},
+    },
 };
 use maingate::{
     decompose_big, MainGate, MainGateInstructions, RangeChip, RangeInstructions, RegionCtx,
@@ -18,19 +21,19 @@ use num_bigint::BigUint;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
-struct RSAExampleConfig<F: Field> {
+struct RSAExampleConfig {
     rsa_config: RSAConfig,
-    sha256_config: Sha256BitConfig<F>,
+    sha256_config: Sha256Config,
 }
 
-struct RSAExample<F: Field> {
+struct RSAExample<F: FieldExt> {
     signature: RSASignature<F>,
     public_key: RSAPublicKey<F>,
     msg: Vec<u8>,
     _f: PhantomData<F>,
 }
 
-impl<F: Field> RSAExample<F> {
+impl<F: FieldExt> RSAExample<F> {
     const BITS_LEN: usize = 2048;
     const LIMB_WIDTH: usize = RSAChip::<F>::LIMB_WIDTH;
     const EXP_LIMB_BITS: usize = 5;
@@ -38,13 +41,13 @@ impl<F: Field> RSAExample<F> {
     fn rsa_chip(&self, config: RSAConfig) -> RSAChip<F> {
         RSAChip::new(config, Self::BITS_LEN, Self::EXP_LIMB_BITS)
     }
-    fn sha256_chip(&self, config: Sha256BitConfig<F>) -> Sha256BitChip<F> {
-        Sha256BitChip::new(config)
+    fn sha256_chip(&self, config: Sha256Config) -> Sha256Chip<F> {
+        Sha256Chip::new(config)
     }
 }
 
-impl<F: Field> Circuit<F> for RSAExample<F> {
-    type Config = RSAExampleConfig<F>;
+impl<F: FieldExt> Circuit<F> for RSAExample<F> {
+    type Config = RSAExampleConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -65,11 +68,13 @@ impl<F: Field> Circuit<F> for RSAExample<F> {
             overflow_bit_lens,
         );
         // 4. Configure `BigIntConfig`.
-        let bigint_config = BigIntConfig::new(range_config, main_gate_config);
+        let bigint_config = BigIntConfig::new(range_config.clone(), main_gate_config.clone());
         // 5. Configure `RSAConfig`.
         let rsa_config = RSAConfig::new(bigint_config);
-        // 6. Configure `Sha256BitConfig`.
-        let sha256_config = Sha256BitConfig::<F>::configure(meta);
+        // 6. Configure `Sha256Config`.
+        let table16_congig = Table16Chip::configure(meta);
+        let sha256_config =
+            Sha256Config::new(main_gate_config, range_config, table16_congig, 128 + 64);
         Self::Config {
             rsa_config,
             sha256_config,
@@ -142,7 +147,6 @@ impl<F: Field> Circuit<F> for RSAExample<F> {
 fn main() {
     use halo2wrong::curves::bn256::Fr as F;
     use halo2wrong::halo2::dev::MockProver;
-    use num_bigint::RandomBits;
     use rand::{thread_rng, Rng};
     use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
     use sha2::{Digest, Sha256};
@@ -199,7 +203,7 @@ fn main() {
     let public_inputs = vec![column0_public_inputs];
 
     // 8. Generate a proof.
-    let k = 17;
+    let k = 18;
     let prover = match MockProver::run(k, &circuit, public_inputs) {
         Ok(prover) => prover,
         Err(e) => panic!("{:#?}", e),
