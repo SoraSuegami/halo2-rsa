@@ -268,8 +268,8 @@ impl<F: FieldExt, T: RangeType> AssignedLimb<F, T> {
 /// Witness integer that is about to be assigned.
 #[derive(Debug, Clone)]
 pub struct UnassignedInteger<F: FieldExt> {
-    value: Value<Vec<F>>,
-    num_limbs: usize,
+    pub(crate) value: Value<Vec<F>>,
+    pub(crate) num_limbs: usize,
 }
 
 impl<'a, F: FieldExt> From<Vec<F>> for UnassignedInteger<F> {

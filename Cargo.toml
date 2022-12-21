@@ -24,5 +24,5 @@ rsa = "0.6.1"
 criterion = "0.4"
 
 [[bench]]
-name = "verify_pkcs1v15_1024"
+name = "verify_rsa_signature"
 harness = false

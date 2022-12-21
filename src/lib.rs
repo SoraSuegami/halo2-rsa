@@ -59,6 +59,15 @@ impl<F: FieldExt> RSAPublicKey<F> {
     pub fn new(n: UnassignedInteger<F>, e: RSAPubE<F>) -> Self {
         Self { n, e }
     }
+
+    pub fn without_witness(num_limbs: usize, fix_e: BigUint) -> Self {
+        let n = UnassignedInteger {
+            value: Value::unknown(),
+            num_limbs,
+        };
+        let e = RSAPubE::<F>::Fix(fix_e);
+        Self { n, e }
+    }
 }
 
 /// An assigned RSA public key.
@@ -101,6 +110,14 @@ impl<F: FieldExt> RSASignature<F> {
     pub fn new(c: UnassignedInteger<F>) -> Self {
         Self { c }
     }
+
+    pub fn without_witness(num_limbs: usize) -> Self {
+        let c = UnassignedInteger {
+            value: Value::unknown(),
+            num_limbs,
+        };
+        Self { c }
+    }
 }
 
 /// An assigned RSA signature.
@@ -126,6 +143,7 @@ use halo2wrong::halo2::circuit::Layouter;
 //pub use zkevm_circuits::sha256_circuit::sha256_bit::{Sha256BitChip, Sha256BitConfig};
 pub use halo2_dynamic_sha256;
 use halo2_dynamic_sha256::Sha256Chip;
+use sha2::digest::crypto_common::KeyInit;
 
 /// A circuit implementation to verify pkcs1v15 signatures.
 #[derive(Clone, Debug)]

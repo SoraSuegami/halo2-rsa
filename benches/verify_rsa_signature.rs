@@ -45,6 +45,20 @@ struct Pkcs1v15BenchCircuit<F: FieldExt> {
     _f: PhantomData<F>,
 }
 
+impl<F: FieldExt> Default for Pkcs1v15BenchCircuit<F> {
+    fn default() -> Self {
+        let num_limbs = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
+        let signature = RSASignature::without_witness(num_limbs);
+        let public_key = RSAPublicKey::without_witness(num_limbs, BigUint::from(Self::DEFAULT_E));
+        Self {
+            signature,
+            public_key,
+            msg: vec![0; 64],
+            _f: PhantomData,
+        }
+    }
+}
+
 impl<F: FieldExt> Pkcs1v15BenchCircuit<F> {
     const BITS_LEN: usize = 1024;
     const LIMB_WIDTH: usize = RSAChip::<F>::LIMB_WIDTH;
@@ -63,7 +77,7 @@ impl<F: FieldExt> Circuit<F> for Pkcs1v15BenchCircuit<F> {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        unimplemented!();
+        Self::default()
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -86,7 +100,7 @@ impl<F: FieldExt> Circuit<F> for Pkcs1v15BenchCircuit<F> {
         // 6. Configure `Sha256Config`.
         let table16_congig = Table16Chip::configure(meta);
         let sha256_config =
-            Sha256Config::new(main_gate_config, range_config, table16_congig, 128 + 64);
+            Sha256Config::new(main_gate_config, range_config, table16_congig, 64 * 2);
         Self::Config {
             rsa_config,
             sha256_config,
@@ -156,13 +170,30 @@ impl<F: FieldExt> Circuit<F> for Pkcs1v15BenchCircuit<F> {
     }
 }
 
-fn pkcs1v15_1024() {
-    use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
-    use halo2wrong::halo2::dev::MockProver;
-    use rand::{thread_rng, Rng};
-    use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
-    use sha2::{Digest, Sha256};
+use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
+use halo2wrong::halo2::dev::MockProver;
+use rand::{thread_rng, Rng};
+use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
+use sha2::{Digest, Sha256};
 
+fn setup_pkcs1v15_1024() -> (
+    ParamsKZG<Bn256>,
+    VerifyingKey<G1Affine>,
+    ProvingKey<G1Affine>,
+) {
+    let circuit = Pkcs1v15BenchCircuit::<Fr>::default();
+    let k = 17;
+    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+    let vk = keygen_vk(&params, &circuit).unwrap();
+    let pk = keygen_pk(&params, vk.clone(), &circuit).unwrap();
+    (params, vk, pk)
+}
+
+fn prove_pkcs1v15_1024(
+    params: &ParamsKZG<Bn256>,
+    vk: &VerifyingKey<G1Affine>,
+    pk: &ProvingKey<G1Affine>,
+) {
     let limb_width = Pkcs1v15BenchCircuit::<Fr>::LIMB_WIDTH;
     let num_limbs = Pkcs1v15BenchCircuit::<Fr>::BITS_LEN / Pkcs1v15BenchCircuit::<Fr>::LIMB_WIDTH;
     // 1. Uniformly sample a RSA key pair.
@@ -171,8 +202,8 @@ fn pkcs1v15_1024() {
         .expect("failed to generate a key");
     let public_key = RsaPublicKey::from(&private_key);
     // 2. Uniformly sample a message.
-    let mut msg: [u8; 128] = [0; 128];
-    for i in 0..128 {
+    let mut msg: [u8; 64] = [0; 64];
+    for i in 0..64 {
         msg[i] = rng.gen();
     }
     // 3. Compute the SHA256 hash of `msg`.
@@ -215,15 +246,11 @@ fn pkcs1v15_1024() {
     //let public_inputs = vec![column0_public_inputs];
 
     // 8. Generate a proof.
-    let k = 18;
-    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
-    let vk = keygen_vk(&params, &circuit).unwrap();
-    let pk = keygen_pk(&params, vk, &circuit).unwrap();
     let proof = {
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
         create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
-            &params,
-            &pk,
+            params,
+            pk,
             &[circuit],
             &[&[&column0_public_inputs]],
             OsRng,
@@ -237,8 +264,8 @@ fn pkcs1v15_1024() {
         let strategy = SingleStrategy::new(&params);
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
         assert!(verify_proof::<_, VerifierGWC<_>, _, _, _>(
-            &params,
-            pk.get_vk(),
+            params,
+            vk,
             strategy,
             &[&[&column0_public_inputs]],
             &mut transcript
@@ -247,9 +274,15 @@ fn pkcs1v15_1024() {
     }
 }
 
-fn pkcs1v15_1024_benchmark(c: &mut Criterion) {
-    c.bench_function("pkcs1v15 1024 bits", |b| b.iter(|| pkcs1v15_1024()));
+fn bench_simple(c: &mut Criterion) {
+    let (params, vk, pk) = setup_pkcs1v15_1024();
+    let mut group = c.benchmark_group("pkcs1v15 signature benchmark");
+    group.sample_size(20);
+    group.bench_function("pkcs1v15 1024 bits", |b| {
+        b.iter(|| prove_pkcs1v15_1024(&params, &vk, &pk))
+    });
+    group.finish();
 }
 
-criterion_group!(benches, pkcs1v15_1024_benchmark);
+criterion_group!(benches, bench_simple);
 criterion_main!(benches);
