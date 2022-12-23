@@ -189,7 +189,9 @@ macro_rules! impl_pkcs1v15_bench_circuit {
                         |region| {
                             let offset = 0;
                             let ctx = &mut RegionCtx::new(region, offset);
-                            let hashed_msg_big = BigUint::from_bytes_le(&self.msg);
+                            let mut hashed_msg = self.msg.clone();
+                            hashed_msg.reverse();
+                            let hashed_msg_big = BigUint::from_bytes_le(&hashed_msg);
                             let hashed_msg_limbs = decompose_big::<F>(
                                 hashed_msg_big.clone(),
                                 4,
@@ -262,7 +264,8 @@ macro_rules! impl_pkcs1v15_bench_circuit {
                 for i in 0..32 {
                     msg[i] = rng.gen();
                 }
-                (msg.to_vec(), msg.to_vec())
+                let hashed_msg = Sha256::digest(&msg).to_vec();
+                (hashed_msg.clone(), hashed_msg)
             };
 
             // 4. Generate a pkcs1v15 signature.
@@ -343,125 +346,6 @@ macro_rules! impl_pkcs1v15_bench_circuit {
     };
 }
 
-// struct Pkcs1v15BenchCircuit<F: FieldExt> {
-//     signature: RSASignature<F>,
-//     public_key: RSAPublicKey<F>,
-//     msg: Vec<u8>,
-//     _f: PhantomData<F>,
-// }
-
-// impl<F: FieldExt> Default for Pkcs1v15BenchCircuit<F> {
-//     fn default() -> Self {
-//         let num_limbs = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
-//         let signature = RSASignature::without_witness(num_limbs);
-//         let public_key = RSAPublicKey::without_witness(num_limbs, BigUint::from(Self::DEFAULT_E));
-//         Self {
-//             signature,
-//             public_key,
-//             msg: vec![0; 64],
-//             _f: PhantomData,
-//         }
-//     }
-// }
-
-// impl<F: FieldExt> Circuit<F> for Pkcs1v15BenchCircuit<F> {
-//     type Config = Pkcs1v15BenchConfig;
-//     type FloorPlanner = SimpleFloorPlanner;
-
-//     fn without_witnesses(&self) -> Self {
-//         Self::default()
-//     }
-
-//     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-//         // 1. Configure `MainGate`.
-//         let main_gate_config = MainGate::<F>::configure(meta);
-//         // 2. Compute bit length parameters by calling `RSAChip::<F>::compute_range_lens` function.
-//         let (composition_bit_lens, overflow_bit_lens) =
-//             RSAChip::<F>::compute_range_lens(Self::BITS_LEN / Self::LIMB_WIDTH);
-//         // 3. Configure `RangeChip`.
-//         let range_config = RangeChip::<F>::configure(
-//             meta,
-//             &main_gate_config,
-//             composition_bit_lens,
-//             overflow_bit_lens,
-//         );
-//         // 4. Configure `BigIntConfig`.
-//         let bigint_config = BigIntConfig::new(range_config.clone(), main_gate_config.clone());
-//         // 5. Configure `RSAConfig`.
-//         let rsa_config = RSAConfig::new(bigint_config);
-//         // 6. Configure `Sha256Config`.
-//         let table16_congig = Table16Chip::configure(meta);
-//         let sha256_config =
-//             Sha256Config::new(main_gate_config, range_config, table16_congig, 64 * 4);
-//         Self::Config {
-//             rsa_config,
-//             sha256_config,
-//         }
-//     }
-
-//     fn synthesize(
-//         &self,
-//         config: Self::Config,
-//         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-//     ) -> Result<(), Error> {
-//         let rsa_chip = self.rsa_chip(config.rsa_config);
-//         let sha256_chip = self.sha256_chip(config.sha256_config);
-//         let bigint_chip = rsa_chip.bigint_chip();
-//         let main_gate = rsa_chip.main_gate();
-//         // 1. Assign a public key and signature.
-//         let (public_key, signature) = layouter.assign_region(
-//             || "rsa signature with hash test using 2048 bits public keys",
-//             |region| {
-//                 let offset = 0;
-//                 let ctx = &mut RegionCtx::new(region, offset);
-//                 let sign = rsa_chip.assign_signature(ctx, self.signature.clone())?;
-//                 let public_key = rsa_chip.assign_public_key(ctx, self.public_key.clone())?;
-//                 Ok((public_key, sign))
-//             },
-//         )?;
-//         // 2. Create a RSA signature verifier from `RSAChip` and `Sha256BitChip`
-//         let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
-//         // 3. Receives the verification result and the resulting hash of `self.msg` from `RSASignatureVerifier`.
-//         let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
-//             layouter.namespace(|| "verify pkcs1v15 signature"),
-//             &public_key,
-//             &self.msg,
-//             &signature,
-//         )?;
-//         // 4. Expose the RSA public key as public input.
-//         for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
-//             main_gate.expose_public(
-//                 layouter.namespace(|| format!("expose {} th public key limb", i)),
-//                 limb.assigned_val(),
-//                 i,
-//             )?;
-//         }
-//         let num_limb_n = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
-//         // 5. Expose the resulting hash as public input.
-//         for (i, val) in hashed_msg.into_iter().enumerate() {
-//             main_gate.expose_public(
-//                 layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
-//                 val,
-//                 num_limb_n + i,
-//             )?;
-//         }
-//         // 6. The verification result must be one.
-//         layouter.assign_region(
-//             || "assert is_valid==1",
-//             |region| {
-//                 let offset = 0;
-//                 let ctx = &mut RegionCtx::new(region, offset);
-//                 main_gate.assert_one(ctx, &is_valid)?;
-//                 Ok(())
-//             },
-//         )?;
-//         // Create lookup tables for range check in `range_chip`.
-//         let range_chip = bigint_chip.range_chip();
-//         range_chip.load_table(&mut layouter)?;
-//         Ok(())
-//     }
-// }
-
 impl_pkcs1v15_bench_circuit!(
     Pkcs1v15_1024_64EnabledBenchCircuit,
     setup_pkcs1v15_1024_64_enabled,
@@ -472,15 +356,53 @@ impl_pkcs1v15_bench_circuit!(
     true
 );
 
+impl_pkcs1v15_bench_circuit!(
+    Pkcs1v15_1024_128EnabledBenchCircuit,
+    setup_pkcs1v15_1024_128_enabled,
+    prove_pkcs1v15_1024_128_enabled,
+    18,
+    1024,
+    128,
+    true
+);
+
+impl_pkcs1v15_bench_circuit!(
+    Pkcs1v15_1024_64DisabledBenchCircuit,
+    setup_pkcs1v15_1024_64_disabled,
+    prove_pkcs1v15_1024_64_disabled,
+    15,
+    1024,
+    64,
+    false
+);
+
 fn bench_pkcs1v15_1024_enabled(c: &mut Criterion) {
     let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_enabled();
+    let (params_128, vk_128, pk_128) = setup_pkcs1v15_1024_128_enabled();
     let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 enabled");
     group.sample_size(10);
     group.bench_function("message 64 bytes", |b| {
         b.iter(|| prove_pkcs1v15_1024_64_enabled(&params_64, &vk_64, &pk_64))
     });
+    group.bench_function("message 128 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_1024_128_enabled(&params_128, &vk_128, &pk_128))
+    });
     group.finish();
 }
 
-criterion_group!(benches, bench_pkcs1v15_1024_enabled);
+fn bench_pkcs1v15_1024_disabled(c: &mut Criterion) {
+    let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_disabled();
+    let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 disabled");
+    group.sample_size(10);
+    group.bench_function("message 64 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_1024_64_disabled(&params_64, &vk_64, &pk_64))
+    });
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    //bench_pkcs1v15_1024_enabled,
+    bench_pkcs1v15_1024_disabled
+);
 criterion_main!(benches);
