@@ -303,14 +303,14 @@ macro_rules! impl_pkcs1v15_bench_circuit {
                 vec![]
             };
 
-            {
+            /*{
                 let prover =
                     match MockProver::run($k, &circuit, vec![column0_public_inputs.clone()]) {
                         Ok(prover) => prover,
                         Err(e) => panic!("{:#?}", e),
                     };
                 assert_eq!(prover.verify(), Ok(()));
-            }
+            }*/
 
             // 8. Generate a proof.
             let proof = {
@@ -466,7 +466,7 @@ impl_pkcs1v15_bench_circuit!(
     Pkcs1v15_1024_64EnabledBenchCircuit,
     setup_pkcs1v15_1024_64_enabled,
     prove_pkcs1v15_1024_64_enabled,
-    18,
+    17,
     1024,
     64,
     true
@@ -475,7 +475,7 @@ impl_pkcs1v15_bench_circuit!(
 fn bench_pkcs1v15_1024_enabled(c: &mut Criterion) {
     let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_enabled();
     let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 enabled");
-    group.sample_size(20);
+    group.sample_size(10);
     group.bench_function("message 64 bytes", |b| {
         b.iter(|| prove_pkcs1v15_1024_64_enabled(&params_64, &vk_64, &pk_64))
     });
