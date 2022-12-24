@@ -14,10 +14,14 @@ use big_integer::*;
 pub use chip::*;
 use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
 pub use instructions::*;
+mod macros;
+pub use macros::*;
+
+#[cfg(target_arch = "wasm32")]
 mod wasm;
+
 use maingate::{
-    big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
-    MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+    big_to_fe, decompose_big, AssignedValue, MainGate, MainGateInstructions, RangeChip, RegionCtx,
 };
 use num_bigint::BigUint;
 
@@ -144,7 +148,6 @@ use halo2wrong::halo2::circuit::Layouter;
 //pub use zkevm_circuits::sha256_circuit::sha256_bit::{Sha256BitChip, Sha256BitConfig};
 pub use halo2_dynamic_sha256;
 use halo2_dynamic_sha256::Sha256Chip;
-use sha2::digest::crypto_common::KeyInit;
 
 /// A circuit implementation to verify pkcs1v15 signatures.
 #[derive(Clone, Debug)]
@@ -188,19 +191,6 @@ impl<F: FieldExt> RSASignatureVerifier<F> {
         msg: &[u8],
         signature: &AssignedRSASignature<F>,
     ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error> {
-        // 1. Compute the SHA256 hash of the input bytes.
-        /*let input_byte_size_with_9 = msg.len() + 9;
-        let one_round_size = 4 * 16;
-        let num_round = if input_byte_size_with_9 % one_round_size == 0 {
-            input_byte_size_with_9 / one_round_size
-        } else {
-            input_byte_size_with_9 / one_round_size + 1
-        };
-        let padded_size = one_round_size * num_round;
-        println!(
-            "input_byte_size_with_9 {}, num_round {}, padded_size {}",
-            input_byte_size_with_9, num_round, padded_size
-        );*/
         let mut sha256 = self.sha256_chip.clone();
         sha256.init(&mut layouter)?;
         let inputs = msg

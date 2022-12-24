@@ -1,24 +1,31 @@
 use crate::{
     big_integer::{
-        AssignedInteger, BigIntChip, BigIntConfig, BigIntInstructions, Fresh, Muled, RangeType,
-        RefreshAux, UnassignedInteger,
+        BigIntChip, BigIntConfig, BigIntInstructions, Fresh, Muled, RangeType, RefreshAux,
+        UnassignedInteger,
     },
-    AssignedRSAPublicKey, AssignedRSASignature, Field, RSAChip, RSAConfig, RSAInstructions,
-    RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier, Sha256BitChip, Sha256BitConfig,
+    impl_pkcs1v15_basic_circuit, AssignedRSAPublicKey, AssignedRSASignature, RSAChip, RSAConfig,
+    RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
 };
+use halo2_dynamic_sha256::{Sha256Chip, Sha256Config, Table16Chip};
+use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
 use halo2wrong::{
-    curves::bn256::{Bn256, Fr as F, G1Affine},
+    curves::FieldExt,
     halo2::{
         circuit::SimpleFloorPlanner,
-        plonk::{create_proof, keygen_pk, keygen_vk, Circuit, ConstraintSystem, Error},
+        plonk::{
+            create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
+            ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
+        },
         poly::{
-            commitment::Params,
-            kzg::commitment::ParamsKZG,
-            kzg::{commitment::KZGCommitmentScheme, multiopen::ProverGWC},
+            commitment::CommitmentScheme,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverGWC, VerifierGWC},
+                strategy::SingleStrategy,
+            },
         },
         transcript::{
-            Blake2bRead, Blake2bWrite, Challenge255, EncodedChallenge, TranscriptReadBuffer,
-            TranscriptWriterBuffer,
+            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
         },
     },
 };
@@ -28,14 +35,25 @@ use maingate::{
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
 };
 use num_bigint::BigUint;
-use rand::{rngs::OsRng, thread_rng};
+use rand::{rngs::OsRng, thread_rng, Rng};
 use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
 use std::{io::BufReader, marker::PhantomData, ops::SubAssign};
 use wasm_bindgen::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
 
-#[derive(Debug, Clone)]
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_1024_64WasmConfig,
+    Pkcs1v15_1024_64WasmCircuit,
+    setup_pkcs1v15_1024_64_wasm,
+    prove_pkcs1v15_1024_64_wasm,
+    17,
+    1024,
+    64,
+    true
+);
+
+/*#[derive(Debug, Clone)]
 struct RSAWasmConfig<F: Field> {
     rsa_config: RSAConfig,
     sha256_config: Sha256BitConfig<F>,
@@ -300,4 +318,4 @@ mod tests {
 
         // prove(params_js, msg_js, signature_js, public_key_js);
     }
-}
+}*/

@@ -15,6 +15,8 @@ halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong
 halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha256.git", version = "0.1.0" }
 num-bigint = { version = "0.4", features = ["rand"] }
 sha2 = "0.10.6"
+rand = "0.8.5"
+rsa = "0.6.1"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -27,11 +29,10 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
+rand = "0.8.5"
 
 
 [dev-dependencies]
-rand = "0.8.5"
-rsa = "0.6.1"
 criterion = "0.4"
 
 [[bench]]

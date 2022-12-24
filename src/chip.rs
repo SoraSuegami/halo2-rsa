@@ -5,7 +5,7 @@ use crate::{
     AssignedRSAPubE, AssignedRSAPublicKey, AssignedRSASignature, Fresh, Muled, RSAInstructions,
     RSAPubE, RSAPublicKey, RSASignature, RangeType, RefreshAux, UnassignedInteger,
 };
-use halo2wrong::halo2::{arithmetic::FieldExt, circuit::Value, plonk::Error};
+use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
 use maingate::{
     big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateInstructions, RangeChip,
     RangeConfig, RangeInstructions, RegionCtx,
