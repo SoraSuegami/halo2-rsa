@@ -19,9 +19,12 @@ pub use macros::*;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;
 
 use maingate::{
-    big_to_fe, decompose_big, AssignedValue, MainGate, MainGateInstructions, RangeChip, RegionCtx,
+    big_to_fe, decompose_big, AssignedValue, MainGate, MainGateInstructions, RangeChip,
+    RangeInstructions, RegionCtx,
 };
 use num_bigint::BigUint;
 

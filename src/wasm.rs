@@ -17,7 +17,7 @@ use halo2wrong::{
             ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
         },
         poly::{
-            commitment::CommitmentScheme,
+            commitment::{CommitmentScheme, Params},
             kzg::{
                 commitment::{KZGCommitmentScheme, ParamsKZG},
                 multiopen::{ProverGWC, VerifierGWC},
@@ -29,7 +29,7 @@ use halo2wrong::{
         },
     },
 };
-use js_sys::Uint8Array;
+use js_sys::{JsString, Uint8Array};
 use maingate::{
     big_to_fe, decompose_big, fe_to_big, AssignedValue, MainGate, MainGateConfig,
     MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
@@ -37,8 +37,10 @@ use maingate::{
 use num_bigint::BigUint;
 use rand::{rngs::OsRng, thread_rng, Rng};
 use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
+use serde::{Deserialize, Serialize};
+use serde_wasm_bindgen::*;
 use sha2::{Digest, Sha256};
-use std::{io::BufReader, marker::PhantomData, ops::SubAssign};
+use std::{fs::File, io::BufReader, marker::PhantomData};
 use wasm_bindgen::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
 
@@ -175,48 +177,96 @@ impl<F: Field> Circuit<F> for RSAWasm<F> {
         range_chip.load_table(&mut layouter)?;
         Ok(())
     }
+}*/
+type RSAWasm<F> = Pkcs1v15_1024_64WasmCircuit<F>;
+#[wasm_bindgen]
+pub fn sample_rsa_private_key() -> JsValue {
+    let mut rng = thread_rng();
+    let private_key =
+        RsaPrivateKey::new(&mut rng, RSAWasm::<Fr>::BITS_LEN).expect("failed to generate a key");
+    serde_wasm_bindgen::to_value(&private_key).unwrap()
 }
 
 #[wasm_bindgen]
-pub fn prove(params_js: JsValue, msg_js: JsValue, signature_js: JsValue, public_key_js: JsValue) {
+pub fn generate_rsa_public_key(pk: JsValue) -> JsValue {
+    let private_key: RsaPrivateKey = serde_wasm_bindgen::from_value(pk).unwrap();
+    let public_key = RsaPublicKey::from(private_key);
+    serde_wasm_bindgen::to_value(&public_key).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn sign(private_key: JsValue, msg: JsValue) -> JsValue {
+    let private_key: RsaPrivateKey = serde_wasm_bindgen::from_value(private_key).unwrap();
+    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let hashed_msg = Sha256::digest(&msg);
+
+    let padding = PaddingScheme::PKCS1v15Sign {
+        hash: Some(Hash::SHA2_256),
+    };
+    let mut sign = private_key
+        .sign(padding, &hashed_msg)
+        .expect("fail to sign a hashed message.");
+    serde_wasm_bindgen::to_value(&sign).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn sha256_msg(msg: JsValue) -> JsValue {
+    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let hashed_msg = Sha256::digest(&msg).to_vec();
+    serde_wasm_bindgen::to_value(&hashed_msg).unwrap()
+}
+
+pub fn gen_srs(k: u32, filename: JsValue) {
+    let filename: String = serde_wasm_bindgen::from_value(filename).unwrap();
+    let mut params_file = File::create(filename).unwrap();
+    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+    params.write(&mut params_file).unwrap();
+}
+
+#[wasm_bindgen]
+pub fn prove_pkcs1v15_1024_128_circuit(
+    params: JsValue,
+    public_key: JsValue,
+    msg: JsValue,
+    signature: JsValue,
+) -> JsValue {
     console_error_panic_hook::set_once();
 
-    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg_js).unwrap();
-    let mut sign: Vec<u8> = serde_wasm_bindgen::from_value(signature_js).unwrap();
-    let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key_js).unwrap();
+    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let mut sign: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
+    let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
 
-    let params = Uint8Array::new(&params_js).to_vec();
+    let params = Uint8Array::new(&params).to_vec();
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
 
-    let limb_width = RSAWasm::<F>::LIMB_WIDTH;
-    let num_limbs = RSAWasm::<F>::BITS_LEN / RSAWasm::<F>::LIMB_WIDTH;
+    let limb_width = RSAWasm::<Fr>::LIMB_WIDTH;
+    let num_limbs = RSAWasm::<Fr>::BITS_LEN / RSAWasm::<Fr>::LIMB_WIDTH;
 
     let hashed_msg = Sha256::digest(&msg);
 
     sign.reverse();
     let sign_big = BigUint::from_bytes_le(&sign);
-    let sign_limbs = decompose_big::<F>(sign_big.clone(), num_limbs, limb_width);
+    let sign_limbs = decompose_big::<Fr>(sign_big.clone(), num_limbs, limb_width);
     let signature = RSASignature::new(UnassignedInteger::from(sign_limbs));
 
     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
-    let n_limbs = decompose_big::<F>(n_big.clone(), num_limbs, limb_width);
+    let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
     let n_unassigned = UnassignedInteger::from(n_limbs.clone());
-    let e_fix = RSAPubE::Fix(BigUint::from(RSAWasm::<F>::DEFAULT_E));
+    let e_fix = RSAPubE::Fix(BigUint::from(RSAWasm::<Fr>::DEFAULT_E));
     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
-    let circuit = RSAWasm::<F> {
+    let circuit = Pkcs1v15_1024_64WasmCircuit::<Fr> {
         signature,
         public_key,
         msg: msg.to_vec(),
         _f: PhantomData,
     };
 
-    let n_fes = n_limbs;
+    let mut column0_public_inputs = n_limbs;
     let mut hash_fes = hashed_msg
         .iter()
-        .map(|byte| F::from(*byte as u64))
-        .collect::<Vec<F>>();
-    let mut column0_public_inputs = n_fes;
+        .map(|byte| Fr::from(*byte as u64))
+        .collect::<Vec<Fr>>();
     column0_public_inputs.append(&mut hash_fes);
 
     let vk = keygen_vk(&params, &circuit).unwrap();
@@ -231,44 +281,52 @@ pub fn prove(params_js: JsValue, msg_js: JsValue, signature_js: JsValue, public_
         &[&[column0_public_inputs.as_slice()]],
         OsRng,
         &mut transcript,
-    );
+    )
+    .unwrap();
+    let proof = transcript.finalize();
+    serde_wasm_bindgen::to_value(&proof).unwrap()
 }
 
 #[wasm_bindgen]
-pub fn sample_rsa_key() -> JsValue {
-    let mut rng = thread_rng();
-    let private_key =
-        RsaPrivateKey::new(&mut rng, RSAWasm::<F>::BITS_LEN).expect("failed to generate a key");
-    serde_wasm_bindgen::to_value(&private_key).unwrap()
+pub fn verify_pkcs1v15_1024_128_circuit(
+    params: JsValue,
+    public_key: JsValue,
+    hashed_msg: JsValue,
+    proof: JsValue,
+) -> bool {
+    console_error_panic_hook::set_once();
+    let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
+    let hashed_msg: Vec<u8> = serde_wasm_bindgen::from_value(hashed_msg).unwrap();
+
+    let params = Uint8Array::new(&params).to_vec();
+    let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
+    let circuit = Pkcs1v15_1024_64WasmCircuit::<Fr>::default();
+    let vk = keygen_vk(&params, &circuit).unwrap();
+
+    let limb_width = RSAWasm::<Fr>::LIMB_WIDTH;
+    let num_limbs = RSAWasm::<Fr>::BITS_LEN / RSAWasm::<Fr>::LIMB_WIDTH;
+    let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
+    let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
+    let mut column0_public_inputs = n_limbs;
+    let mut hash_fes = hashed_msg
+        .iter()
+        .map(|byte| Fr::from(*byte as u64))
+        .collect::<Vec<Fr>>();
+    column0_public_inputs.append(&mut hash_fes);
+
+    let strategy = SingleStrategy::new(&params);
+    let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
+    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+    verify_proof::<_, VerifierGWC<_>, _, _, _>(
+        &params,
+        &vk,
+        strategy,
+        &[&[&column0_public_inputs]],
+        &mut transcript,
+    )
+    .is_ok()
 }
-
-#[wasm_bindgen]
-pub fn public_key(pk: JsValue) -> JsValue {
-    let pk: RsaPrivateKey = serde_wasm_bindgen::from_value(pk).unwrap();
-    let pub_key = RsaPublicKey::from(pk);
-    serde_wasm_bindgen::to_value(&pub_key).unwrap()
-}
-
-#[wasm_bindgen]
-pub fn sign(pk: JsValue, msg: JsValue) -> JsValue {
-    let pk: RsaPrivateKey = serde_wasm_bindgen::from_value(pk).unwrap();
-    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
-    let hashed_msg = Sha256::digest(&msg);
-
-    let padding = PaddingScheme::PKCS1v15Sign {
-        hash: Some(Hash::SHA2_256),
-    };
-    let mut sign = pk
-        .sign(padding, &hashed_msg)
-        .expect("fail to sign a hashed message.");
-    serde_wasm_bindgen::to_value(&sign).unwrap()
-}
-
-fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
-    ParamsKZG::<Bn256>::setup(k, OsRng)
-}
-
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
     use std::{fs::File, io::Read};
 

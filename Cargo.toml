@@ -16,7 +16,7 @@ halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha
 num-bigint = { version = "0.4", features = ["rand"] }
 sha2 = "0.10.6"
 rand = "0.8.5"
-rsa = "0.6.1"
+rsa = { version = "0.6.1", features = ["serde"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
