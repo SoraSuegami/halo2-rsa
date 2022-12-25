@@ -4,25 +4,28 @@ import './App.css';
 import { wrap } from 'comlink';
 
 function App() {
-  const worker = new Worker(new URL('./halo-worker', import.meta.url), {
-    name: 'halo-worker',
+  const worker = new Worker(new URL('./rsa-worker', import.meta.url), {
+    name: 'rsa-worker',
     type: 'module',
   });
-  const workerApi = wrap<import('./halo-worker').HaloWorker>(worker);
+  const workerApi = wrap<import('./rsa-worker').RSAWorker>(worker);
   const [ans, setAns] = useState(0);
 
   async function test() {
-    try { 
+    try {
+      console.log("benchmark start");
+      const privateKey = await workerApi.sample_rsa_private_key();
+      let msg = new Uint8Array([5]);
+      const publicKey = await workerApi.to_public_key(privateKey);
+      const signature = await workerApi.sign(privateKey, msg);
       const start = performance.now();
-      const pk = await workerApi.gen_key();
-      const pub_key = await workerApi.to_public_key(pk);
-      let msg = new Uint8Array([5,4]);
-      const signature = await workerApi.sign(msg, pk);
-      console.log(signature);
-
-
-    // console.log('btw', performance.now() - start);
-    } catch(e) { 
+      const proof = await workerApi.prove(publicKey, msg, signature);
+      console.log('proof generation', performance.now() - start);
+      const hashedMsg = await workerApi.sha256_msg(msg);
+      let isValid = await workerApi.verify(publicKey, hashedMsg, proof);
+      console.log(isValid)
+      console.log("benchmark end");
+    } catch (e) {
       console.log(e)
     }
     // const proof = await workerApi.prove_play();
@@ -33,7 +36,7 @@ function App() {
     // console.log('verified', verification);
     // console.log('time', performance.now() - start);
   }
-  
+
 
   return (
     <div className="App">

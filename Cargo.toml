@@ -35,6 +35,10 @@ rand = "0.8.5"
 [dev-dependencies]
 criterion = "0.4"
 
+[[bin]]
+name = "gen_srs"
+path = "src/gen_srs.rs"
+
 [[bench]]
 name = "bench"
 harness = false

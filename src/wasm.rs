@@ -188,8 +188,8 @@ pub fn sample_rsa_private_key() -> JsValue {
 }
 
 #[wasm_bindgen]
-pub fn generate_rsa_public_key(pk: JsValue) -> JsValue {
-    let private_key: RsaPrivateKey = serde_wasm_bindgen::from_value(pk).unwrap();
+pub fn generate_rsa_public_key(private_key: JsValue) -> JsValue {
+    let private_key: RsaPrivateKey = serde_wasm_bindgen::from_value(private_key).unwrap();
     let public_key = RsaPublicKey::from(private_key);
     serde_wasm_bindgen::to_value(&public_key).unwrap()
 }
@@ -197,13 +197,14 @@ pub fn generate_rsa_public_key(pk: JsValue) -> JsValue {
 #[wasm_bindgen]
 pub fn sign(private_key: JsValue, msg: JsValue) -> JsValue {
     let private_key: RsaPrivateKey = serde_wasm_bindgen::from_value(private_key).unwrap();
-    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    //let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
     let hashed_msg = Sha256::digest(&msg);
 
     let padding = PaddingScheme::PKCS1v15Sign {
         hash: Some(Hash::SHA2_256),
     };
-    let mut sign = private_key
+    let sign = private_key
         .sign(padding, &hashed_msg)
         .expect("fail to sign a hashed message.");
     serde_wasm_bindgen::to_value(&sign).unwrap()
@@ -211,16 +212,10 @@ pub fn sign(private_key: JsValue, msg: JsValue) -> JsValue {
 
 #[wasm_bindgen]
 pub fn sha256_msg(msg: JsValue) -> JsValue {
-    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    //let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
     let hashed_msg = Sha256::digest(&msg).to_vec();
     serde_wasm_bindgen::to_value(&hashed_msg).unwrap()
-}
-
-pub fn gen_srs(k: u32, filename: JsValue) {
-    let filename: String = serde_wasm_bindgen::from_value(filename).unwrap();
-    let mut params_file = File::create(filename).unwrap();
-    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
-    params.write(&mut params_file).unwrap();
 }
 
 #[wasm_bindgen]
@@ -232,8 +227,9 @@ pub fn prove_pkcs1v15_1024_128_circuit(
 ) -> JsValue {
     console_error_panic_hook::set_once();
 
-    let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
-    let mut sign: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
+    //let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
+    let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
 
     let params = Uint8Array::new(&params).to_vec();
@@ -244,8 +240,8 @@ pub fn prove_pkcs1v15_1024_128_circuit(
 
     let hashed_msg = Sha256::digest(&msg);
 
-    sign.reverse();
-    let sign_big = BigUint::from_bytes_le(&sign);
+    signature.reverse();
+    let sign_big = BigUint::from_bytes_le(&signature);
     let sign_limbs = decompose_big::<Fr>(sign_big.clone(), num_limbs, limb_width);
     let signature = RSASignature::new(UnassignedInteger::from(sign_limbs));
 
@@ -258,7 +254,7 @@ pub fn prove_pkcs1v15_1024_128_circuit(
     let circuit = Pkcs1v15_1024_64WasmCircuit::<Fr> {
         signature,
         public_key,
-        msg: msg.to_vec(),
+        msg,
         _f: PhantomData,
     };
 
@@ -326,7 +322,7 @@ pub fn verify_pkcs1v15_1024_128_circuit(
     )
     .is_ok()
 }
-/*#[cfg(test)]
+/*
 mod tests {
     use std::{fs::File, io::Read};
 
@@ -334,17 +330,17 @@ mod tests {
     use rand::{thread_rng, Rng};
     use rsa::{Hash, PaddingScheme, RsaPrivateKey, RsaPublicKey};
     use sha2::Sha256;
-    use wasm_bindgen_test::*;
 
     #[test]
     fn write_params() {
         let mut file = File::create("params.bin").unwrap();
         let params = gen_srs(17);
         params.write(&mut file).unwrap();
+        write_srs(17, "params.bin")
     }
 
     // #[wasm_bindgen_test]
-    fn test_wasm() {
+    /*fn test_wasm() {
         let mut params_file = File::open("params.bin").unwrap();
         let mut params_buf = vec![];
         params_file.read_to_end(&mut params_buf);
@@ -375,5 +371,6 @@ mod tests {
         let public_key_js = serde_wasm_bindgen::to_value(&public_key).unwrap();
 
         // prove(params_js, msg_js, signature_js, public_key_js);
-    }
-}*/
+    }*/
+}
+*/
