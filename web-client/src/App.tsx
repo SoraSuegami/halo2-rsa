@@ -15,13 +15,13 @@ function App() {
     try {
       console.log("benchmark start");
       const privateKey = await workerApi.sample_rsa_private_key();
-      let msg = new Uint8Array([5]);
+      let msg = new Uint8Array(new Array<number>(64).fill(0));
       const publicKey = await workerApi.to_public_key(privateKey);
       const signature = await workerApi.sign(privateKey, msg);
-      const start = performance.now();
-      const proof = await workerApi.prove(publicKey, msg, signature);
-      console.log('proof generation', performance.now() - start);
       const hashedMsg = await workerApi.sha256_msg(msg);
+      const start = performance.now();
+      const proof = await workerApi.prove(publicKey, hashedMsg, signature);
+      console.log('proof generation', performance.now() - start);
       let isValid = await workerApi.verify(publicKey, hashedMsg, proof);
       console.log(isValid)
       console.log("benchmark end");
