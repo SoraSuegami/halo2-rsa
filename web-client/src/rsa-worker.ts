@@ -80,6 +80,35 @@ async function verify(
   return ret;
 }
 
+async function prove_no_sha2(
+  public_key: any,
+  hashed_msg: any,
+  signature: any
+): Promise<any> {
+  const params = await fetch_params();
+  const multiThread = await import(
+    'halo2-rsa'
+  );
+  await multiThread.default();
+  await multiThread.initThreadPool(navigator.hardwareConcurrency);
+  const ret = multiThread.prove_pkcs1v15_1024_128_circuit_no_sha2(params, public_key, hashed_msg, signature);
+  return ret;
+}
+
+async function verify_no_sha2(
+  public_key: any,
+  hashed_msg: any,
+  proof: any
+): Promise<boolean> {
+  const params = await fetch_params();
+  const multiThread = await import(
+    'halo2-rsa'
+  );
+  await multiThread.default();
+  await multiThread.initThreadPool(navigator.hardwareConcurrency);
+  const ret = multiThread.verify_pkcs1v15_1024_128_circuit_no_sha2(params, public_key, hashed_msg, proof);
+  return ret;
+}
 
 const exports = {
   sign,
@@ -87,7 +116,9 @@ const exports = {
   to_public_key,
   sha256_msg,
   prove,
-  verify
+  verify,
+  prove_no_sha2,
+  verify_no_sha2
 };
 export type RSAWorker = typeof exports;
 
