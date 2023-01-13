@@ -155,7 +155,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     // 3. Receives the verification result and the resulting hash of `self.msg` from `RSASignatureVerifier`.
                     let (is_valid, hashed_msg) = layouter.assign_region(
                         || "verify pkcs1v15 signature",
-                        |mut region| {
+                        |region| {
                             verifier.verify_pkcs1v15_signature(
                                 region,
                                 &public_key,
@@ -167,14 +167,14 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     )?;
 
                     // 4. Expose the RSA public key as public input.
-                    for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
-                        main_gate.expose_public(
-                            layouter.namespace(|| format!("expose {} th public key limb", i)),
-                            limb.assigned_val(),
-                            i,
-                        )?;
-                    }
-                    let num_limb_n = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
+                    // for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                    //     main_gate.expose_public(
+                    //         layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    //         limb.assigned_val(),
+                    //         i,
+                    //     )?;
+                    // }
+                    // let num_limb_n = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
 
                     //5. Expose the resulting hash as public input.
                     // for (i, val) in hashed_msg.into_iter().enumerate() {
@@ -221,13 +221,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                         },
                     )?;
 
-                    for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
-                        main_gate.expose_public(
-                            layouter.namespace(|| format!("expose {} th public key limb", i)),
-                            limb.assigned_val(),
-                            i,
-                        )?;
-                    }
+                    // for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                    //     main_gate.expose_public(
+                    //         layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    //         limb.assigned_val(),
+                    //         i,
+                    //     )?;
+                    // }
 
                     layouter.assign_region(
                         || "assert is_valid==1 (sha2 disabled)",
@@ -323,7 +323,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             };
 
             // 7. Create public inputs
-            let mut column0_public_inputs = n_limbs;
+            //let mut column0_public_inputs = n_limbs;
             // if $sha2_chip_enabled {
             //     let mut hash_fes = hashed_msg
             //         .iter()
@@ -348,7 +348,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     params,
                     pk,
                     &[circuit],
-                    &[&[&column0_public_inputs]],
+                    &[&[&[]]],
                     OsRng,
                     &mut transcript,
                 )
