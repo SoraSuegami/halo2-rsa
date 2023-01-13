@@ -2,7 +2,7 @@
 //! The circuit constraints are satisfied if and only if the following conditions hold.
 //! 1. The resulting hash of the given message is equal to the given hash.
 //! 2. The given signature is valid for the given public key and hash.
-use halo2_dynamic_sha256::{Sha256Chip, Sha256Config, Table16Chip};
+use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
 use halo2_rsa::{
     big_integer::{BigIntConfig, UnassignedInteger},
     RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
@@ -21,19 +21,20 @@ use num_bigint::BigUint;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone)]
-struct RSAExampleConfig {
+struct RSAExampleConfig<F: Field> {
     rsa_config: RSAConfig,
-    sha256_config: Sha256Config,
+    sha256_config: Sha256Config<F>,
 }
 
-struct RSAExample<F: FieldExt> {
+struct RSAExample<F: Field> {
     signature: RSASignature<F>,
     public_key: RSAPublicKey<F>,
     msg: Vec<u8>,
+    r: F,
     _f: PhantomData<F>,
 }
 
-impl<F: FieldExt> RSAExample<F> {
+impl<F: Field> RSAExample<F> {
     const BITS_LEN: usize = 2048;
     const LIMB_WIDTH: usize = RSAChip::<F>::LIMB_WIDTH;
     const EXP_LIMB_BITS: usize = 5;
@@ -41,13 +42,13 @@ impl<F: FieldExt> RSAExample<F> {
     fn rsa_chip(&self, config: RSAConfig) -> RSAChip<F> {
         RSAChip::new(config, Self::BITS_LEN, Self::EXP_LIMB_BITS)
     }
-    fn sha256_chip(&self, config: Sha256Config) -> Sha256Chip<F> {
+    fn sha256_chip(&self, config: Sha256Config<F>) -> Sha256Chip<F> {
         Sha256Chip::new(config)
     }
 }
 
-impl<F: FieldExt> Circuit<F> for RSAExample<F> {
-    type Config = RSAExampleConfig;
+impl<F: Field> Circuit<F> for RSAExample<F> {
+    type Config = RSAExampleConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -72,9 +73,7 @@ impl<F: FieldExt> Circuit<F> for RSAExample<F> {
         // 5. Configure `RSAConfig`.
         let rsa_config = RSAConfig::new(bigint_config);
         // 6. Configure `Sha256Config`.
-        let table16_congig = Table16Chip::configure(meta);
-        let sha256_config =
-            Sha256Config::new(main_gate_config, range_config, table16_congig, 128 + 64);
+        let sha256_config = Sha256Config::configure(meta, 128 + 64);
         Self::Config {
             rsa_config,
             sha256_config,
@@ -104,11 +103,17 @@ impl<F: FieldExt> Circuit<F> for RSAExample<F> {
         // 2. Create a RSA signature verifier from `RSAChip` and `Sha256BitChip`
         let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
         // 3. Receives the verification result and the resulting hash of `self.msg` from `RSASignatureVerifier`.
-        let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
-            layouter.namespace(|| "verify pkcs1v15 signature"),
-            &public_key,
-            &self.msg,
-            &signature,
+        let (is_valid, hashed_msg) = layouter.assign_region(
+            || "verify pkcs1v15 signature",
+            |mut region| {
+                verifier.verify_pkcs1v15_signature(
+                    region,
+                    &public_key,
+                    &self.msg,
+                    &signature,
+                    self.r,
+                )
+            },
         )?;
         // 4. Expose the RSA public key as public input.
         for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
@@ -185,10 +190,17 @@ fn main() {
     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
     // 6. Create our circuit!
+    // Compute the randomness from the hashed_msg.
+    let mut seed = [0; 64];
+    for idx in 0..32 {
+        seed[idx] = hashed_msg[idx];
+    }
+    let r = F::from_bytes_wide(&seed);
     let circuit = RSAExample::<F> {
         signature,
         public_key,
         msg: msg.to_vec(),
+        r,
         _f: PhantomData,
     };
 

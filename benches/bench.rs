@@ -1,10 +1,12 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use halo2_dynamic_sha256::{Sha256Chip, Sha256Config, Table16Chip};
+use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
 use halo2_rsa::{
     big_integer::{BigIntConfig, BigIntInstructions, UnassignedInteger},
     impl_pkcs1v15_basic_circuit, RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey,
     RSASignature, RSASignatureVerifier,
 };
+use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
+use halo2wrong::halo2::dev::MockProver;
 use halo2wrong::{
     curves::FieldExt,
     halo2::{
@@ -14,7 +16,7 @@ use halo2wrong::{
             ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
         },
         poly::{
-            commitment::CommitmentScheme,
+            commitment::Params,
             kzg::{
                 commitment::{KZGCommitmentScheme, ParamsKZG},
                 multiopen::{ProverGWC, VerifierGWC},
@@ -31,20 +33,22 @@ use maingate::{
 };
 use num_bigint::BigUint;
 use rand::rngs::OsRng;
-use std::marker::PhantomData;
-
-use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
-use halo2wrong::halo2::dev::MockProver;
 use rand::{thread_rng, Rng};
 use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
+use std::marker::PhantomData;
+use std::{
+    fs::File,
+    io::{prelude::*, BufReader},
+    path::Path,
+};
 
 impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_64EnabledBenchConfig,
     Pkcs1v15_1024_64EnabledBenchCircuit,
     setup_pkcs1v15_1024_64_enabled,
     prove_pkcs1v15_1024_64_enabled,
-    17,
+    16,
     1024,
     64,
     true
@@ -55,7 +59,7 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_128EnabledBenchCircuit,
     setup_pkcs1v15_1024_128_enabled,
     prove_pkcs1v15_1024_128_enabled,
-    18,
+    16,
     1024,
     128,
     true
@@ -73,16 +77,29 @@ impl_pkcs1v15_basic_circuit!(
 );
 
 fn bench_pkcs1v15_1024_enabled(c: &mut Criterion) {
+    // let params_path = Path::new("./benches/params_k_16");
+    // if File::open(&params_path).is_err() {
+    //     let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_enabled();
+    //     let mut buf = Vec::new();
+
+    //     params_64.write(&mut buf).expect("Failed to write params");
+    //     let mut file = File::create(&params_path).expect("Failed to create sha256_params");
+
+    //     file.write_all(&buf[..])
+    //         .expect("Failed to write params to file");
+    // }
     let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_enabled();
-    let (params_128, vk_128, pk_128) = setup_pkcs1v15_1024_128_enabled();
+    println!("params_64 generated");
+    // let (params_128, vk_128, pk_128) = setup_pkcs1v15_1024_128_enabled();
+    // println!("params_128 generated");
     let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 enabled");
     group.sample_size(10);
     group.bench_function("message 64 bytes", |b| {
         b.iter(|| prove_pkcs1v15_1024_64_enabled(&params_64, &vk_64, &pk_64))
     });
-    group.bench_function("message 128 bytes", |b| {
+    /*group.bench_function("message 128 bytes", |b| {
         b.iter(|| prove_pkcs1v15_1024_128_enabled(&params_128, &vk_128, &pk_128))
-    });
+    });*/
     group.finish();
 }
 
@@ -98,7 +115,7 @@ fn bench_pkcs1v15_1024_disabled(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    //bench_pkcs1v15_1024_enabled,
-    bench_pkcs1v15_1024_disabled
+    bench_pkcs1v15_1024_enabled,
+    //bench_pkcs1v15_1024_disabled
 );
 criterion_main!(benches);

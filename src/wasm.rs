@@ -6,7 +6,7 @@ use crate::{
     impl_pkcs1v15_basic_circuit, AssignedRSAPublicKey, AssignedRSASignature, RSAChip, RSAConfig,
     RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
 };
-use halo2_dynamic_sha256::{Sha256Chip, Sha256Config, Table16Chip};
+use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
 use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
 use halo2wrong::{
     curves::FieldExt,
@@ -262,10 +262,18 @@ pub fn prove_pkcs1v15_1024_128_circuit(
     let e_fix = RSAPubE::Fix(BigUint::from(RSAWasm::<Fr>::DEFAULT_E));
     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
+    // Compute the randomness from the hashed_msg.
+    let mut seed = [0; 64];
+    for idx in 0..32 {
+        seed[idx] = hashed_msg[idx];
+    }
+    let r = <Fr as FieldExt>::from_bytes_wide(&seed);
+
     let circuit = RSAWasm::<Fr> {
         signature,
         public_key,
         msg,
+        r,
         _f: PhantomData,
     };
 
@@ -366,10 +374,18 @@ pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
     let e_fix = RSAPubE::Fix(BigUint::from(RSAWasmNoSha2::<Fr>::DEFAULT_E));
     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
+    // Compute the randomness from the hashed_msg.
+    let mut seed = [0; 64];
+    for idx in 0..32 {
+        seed[idx] = hashed_msg[idx];
+    }
+    let r = <Fr as FieldExt>::from_bytes_wide(&seed);
+
     let circuit = RSAWasmNoSha2::<Fr> {
         signature,
         public_key,
         msg: hashed_msg.clone(),
+        r,
         _f: PhantomData,
     };
 

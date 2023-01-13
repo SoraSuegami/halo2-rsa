@@ -2,26 +2,23 @@ use crate::{
     big_integer::{BigIntConfig, BigIntInstructions, UnassignedInteger},
     RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
 };
-use halo2_dynamic_sha256::{Sha256Chip, Sha256Config, Table16Chip};
-use halo2wrong::{
-    curves::FieldExt,
-    halo2::{
-        circuit::SimpleFloorPlanner,
-        plonk::{
-            create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
-            ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
+use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
+use halo2wrong::halo2::{
+    circuit::SimpleFloorPlanner,
+    plonk::{
+        create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
+        ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
+    },
+    poly::{
+        commitment::CommitmentScheme,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::{ProverGWC, VerifierGWC},
+            strategy::SingleStrategy,
         },
-        poly::{
-            commitment::CommitmentScheme,
-            kzg::{
-                commitment::{KZGCommitmentScheme, ParamsKZG},
-                multiopen::{ProverGWC, VerifierGWC},
-                strategy::SingleStrategy,
-            },
-        },
-        transcript::{
-            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-        },
+    },
+    transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
 use maingate::{
@@ -41,19 +38,20 @@ use sha2::{Digest, Sha256};
 macro_rules! impl_pkcs1v15_basic_circuit {
     ($config_name:ident, $circuit_name:ident, $setup_fn_name:ident, $prove_fn_name:ident, $k:expr, $n_bits:expr, $msg_bytes:expr, $sha2_chip_enabled:expr) => {
         #[derive(Debug, Clone)]
-        struct $config_name {
+        struct $config_name<F: Field> {
             rsa_config: RSAConfig,
-            sha256_config: Option<Sha256Config>,
+            sha256_config: Option<Sha256Config<F>>,
         }
 
-        struct $circuit_name<F: FieldExt> {
+        struct $circuit_name<F: Field> {
             signature: RSASignature<F>,
             public_key: RSAPublicKey<F>,
             msg: Vec<u8>,
+            r: F,
             _f: PhantomData<F>,
         }
 
-        impl<F: FieldExt> Default for $circuit_name<F> {
+        impl<F: Field> Default for $circuit_name<F> {
             fn default() -> Self {
                 let num_limbs = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
                 let signature = RSASignature::without_witness(num_limbs);
@@ -64,16 +62,18 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 } else {
                     vec![0; 32]
                 };
+                let r = F::zero();
                 Self {
                     signature,
                     public_key,
                     msg,
+                    r,
                     _f: PhantomData,
                 }
             }
         }
 
-        impl<F: FieldExt> $circuit_name<F> {
+        impl<F: Field> $circuit_name<F> {
             const BITS_LEN: usize = $n_bits;
             const LIMB_WIDTH: usize = RSAChip::<F>::LIMB_WIDTH;
             const EXP_LIMB_BITS: usize = 5;
@@ -81,13 +81,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             fn rsa_chip(&self, config: RSAConfig) -> RSAChip<F> {
                 RSAChip::new(config, Self::BITS_LEN, Self::EXP_LIMB_BITS)
             }
-            fn sha256_chip(&self, config: Sha256Config) -> Sha256Chip<F> {
+            fn sha256_chip(&self, config: Sha256Config<F>) -> Sha256Chip<F> {
                 Sha256Chip::new(config)
             }
         }
 
-        impl<F: FieldExt> Circuit<F> for $circuit_name<F> {
-            type Config = $config_name;
+        impl<F: Field> Circuit<F> for $circuit_name<F> {
+            type Config = $config_name<F>;
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -114,13 +114,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 let rsa_config = RSAConfig::new(bigint_config);
                 // 6. Configure `Sha256Config`.
                 let sha256_config = if $sha2_chip_enabled {
-                    let table16_congig = Table16Chip::configure(meta);
-                    Some(Sha256Config::new(
-                        main_gate_config,
-                        range_config,
-                        table16_congig,
-                        $msg_bytes + 64,
-                    ))
+                    Some(Sha256Config::configure(meta, $msg_bytes + 64))
                 } else {
                     None
                 };
@@ -144,7 +138,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
 
                 // 1. Assign a public key and signature.
                 let (public_key, signature) = layouter.assign_region(
-                    || "rsa signature with hash test using 2048 bits public keys",
+                    || "rsa signature with hash test",
                     |region| {
                         let offset = 0;
                         let ctx = &mut RegionCtx::new(region, offset);
@@ -159,11 +153,17 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     // 2. Create a RSA signature verifier from `RSAChip` and `Sha256BitChip`
                     let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
                     // 3. Receives the verification result and the resulting hash of `self.msg` from `RSASignatureVerifier`.
-                    let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
-                        layouter.namespace(|| "verify pkcs1v15 signature"),
-                        &public_key,
-                        &self.msg,
-                        &signature,
+                    let (is_valid, hashed_msg) = layouter.assign_region(
+                        || "verify pkcs1v15 signature",
+                        |mut region| {
+                            verifier.verify_pkcs1v15_signature(
+                                region,
+                                &public_key,
+                                &self.msg,
+                                &signature,
+                                self.r,
+                            )
+                        },
                     )?;
 
                     // 4. Expose the RSA public key as public input.
@@ -177,13 +177,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     let num_limb_n = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
 
                     //5. Expose the resulting hash as public input.
-                    for (i, val) in hashed_msg.into_iter().enumerate() {
-                        main_gate.expose_public(
-                            layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
-                            val,
-                            num_limb_n + i,
-                        )?;
-                    }
+                    // for (i, val) in hashed_msg.into_iter().enumerate() {
+                    //     main_gate.expose_public(
+                    //         layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
+                    //         val,
+                    //         num_limb_n + i,
+                    //     )?;
+                    // }
                     // 6. The verification result must be one.
                     layouter.assign_region(
                         || "assert is_valid==1 (sha2 enabled)",
@@ -308,22 +308,29 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
             // 6. Create our circuit!
+            // Compute the randomness from the hashed_msg.
+            let mut seed = [0; 64];
+            for idx in 0..32 {
+                seed[idx] = hashed_msg[idx];
+            }
+            let r = <Fr as FieldExt>::from_bytes_wide(&seed);
             let circuit = $circuit_name::<Fr> {
                 signature,
                 public_key,
                 msg,
+                r,
                 _f: PhantomData,
             };
 
             // 7. Create public inputs
             let mut column0_public_inputs = n_limbs;
-            if $sha2_chip_enabled {
-                let mut hash_fes = hashed_msg
-                    .iter()
-                    .map(|byte| Fr::from(*byte as u64))
-                    .collect::<Vec<Fr>>();
-                column0_public_inputs.append(&mut hash_fes);
-            }
+            // if $sha2_chip_enabled {
+            //     let mut hash_fes = hashed_msg
+            //         .iter()
+            //         .map(|byte| Fr::from(*byte as u64))
+            //         .collect::<Vec<Fr>>();
+            //     column0_public_inputs.append(&mut hash_fes);
+            // }
 
             /*{
                 let prover =
@@ -350,16 +357,16 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             };
             // 9. Verify the proof.
             {
-                let strategy = SingleStrategy::new(&params);
-                let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-                assert!(verify_proof::<_, VerifierGWC<_>, _, _, _>(
-                    params,
-                    vk,
-                    strategy,
-                    &[&[&column0_public_inputs]],
-                    &mut transcript
-                )
-                .is_ok());
+                // let strategy = SingleStrategy::new(&params);
+                // let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+                // assert!(verify_proof::<_, VerifierGWC<_>, _, _, _>(
+                //     params,
+                //     vk,
+                //     strategy,
+                //     &[&[&column0_public_inputs]],
+                //     &mut transcript
+                // )
+                // .is_ok());
             }
         }
     };

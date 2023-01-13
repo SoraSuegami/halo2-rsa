@@ -10,9 +10,9 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "63bde545d934e69c806ef9bc8b18f03f6ec0fe8e" }
-halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", version = "0.1.0", rev = "63bde545d934e69c806ef9bc8b18f03f6ec0fe8e" }
-halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha256.git", version = "0.1.0" }
+halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09" }
+halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha256.git", version = "0.1.0", branch = "feat/many_columns" }
 num-bigint = { version = "0.4", features = ["rand"] }
 sha2 = "0.10.6"
 rand = "0.8.5"
