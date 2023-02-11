@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
+use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicChip, Sha256DynamicConfig};
 use halo2_rsa::{
     big_integer::{BigIntConfig, BigIntInstructions, UnassignedInteger},
     impl_pkcs1v15_basic_circuit, RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey,
@@ -70,8 +70,41 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_1024EnabledBenchCircuit,
     setup_pkcs1v15_1024_1024_enabled,
     prove_pkcs1v15_1024_1024_enabled,
-    15,
+    16,
     1024,
+    1024,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_64EnabledBenchConfig,
+    Pkcs1v15_2048_64EnabledBenchCircuit,
+    setup_pkcs1v15_2048_64_enabled,
+    prove_pkcs1v15_2048_64_enabled,
+    17,
+    2048,
+    64,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_128EnabledBenchConfig,
+    Pkcs1v15_2048_128EnabledBenchCircuit,
+    setup_pkcs1v15_2048_128_enabled,
+    prove_pkcs1v15_2048_128_enabled,
+    17,
+    2048,
+    128,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_1024EnabledBenchConfig,
+    Pkcs1v15_2048_1024EnabledBenchCircuit,
+    setup_pkcs1v15_2048_1024_enabled,
+    prove_pkcs1v15_2048_1024_enabled,
+    17,
+    2048,
     1024,
     true
 );
@@ -87,41 +120,18 @@ impl_pkcs1v15_basic_circuit!(
     false
 );
 
-impl_pkcs1v15_basic_circuit!(
-    Pkcs1v15_2048_1024EnabledBenchConfig,
-    Pkcs1v15_2048_1024EnabledBenchCircuit,
-    setup_pkcs1v15_2048_1024_enabled,
-    prove_pkcs1v15_2048_1024_enabled,
-    17,
-    2048,
-    2048,
-    true
-);
-
 fn bench_pkcs1v15_1024_enabled(c: &mut Criterion) {
-    // let params_path = Path::new("./benches/params_k_16");
-    // if File::open(&params_path).is_err() {
-    //     let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_enabled();
-    //     let mut buf = Vec::new();
-
-    //     params_64.write(&mut buf).expect("Failed to write params");
-    //     let mut file = File::create(&params_path).expect("Failed to create sha256_params");
-
-    //     file.write_all(&buf[..])
-    //         .expect("Failed to write params to file");
-    // }
-    let (params, vk, pk) = setup_pkcs1v15_1024_64_enabled();
-    println!("params_64 generated");
-    // let (params_128, vk_128, pk_128) = setup_pkcs1v15_1024_128_enabled();
-    // println!("params_128 generated");
     let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 enabled");
     group.sample_size(10);
-    // group.bench_function("message 64 bytes", |b| {
-    //     b.iter(|| prove_pkcs1v15_1024_64_enabled(&params, &vk, &pk))
-    // });
-    // group.bench_function("message 128 bytes", |b| {
-    //     b.iter(|| prove_pkcs1v15_1024_128_enabled(&params, &vk, &pk))
-    // });
+    let (params, vk, pk) = setup_pkcs1v15_1024_64_enabled();
+    group.bench_function("message 64 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_1024_64_enabled(&params, &vk, &pk))
+    });
+    let (params, vk, pk) = setup_pkcs1v15_1024_128_enabled();
+    group.bench_function("message 128 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_1024_128_enabled(&params, &vk, &pk))
+    });
+    let (params, vk, pk) = setup_pkcs1v15_1024_1024_enabled();
     group.bench_function("message 1024 bytes", |b| {
         b.iter(|| prove_pkcs1v15_1024_1024_enabled(&params, &vk, &pk))
     });
@@ -129,29 +139,17 @@ fn bench_pkcs1v15_1024_enabled(c: &mut Criterion) {
 }
 
 fn bench_pkcs1v15_2048_enabled(c: &mut Criterion) {
-    // let params_path = Path::new("./benches/params_k_16");
-    // if File::open(&params_path).is_err() {
-    //     let (params_64, vk_64, pk_64) = setup_pkcs1v15_1024_64_enabled();
-    //     let mut buf = Vec::new();
-
-    //     params_64.write(&mut buf).expect("Failed to write params");
-    //     let mut file = File::create(&params_path).expect("Failed to create sha256_params");
-
-    //     file.write_all(&buf[..])
-    //         .expect("Failed to write params to file");
-    // }
-    let (params, vk, pk) = setup_pkcs1v15_2048_1024_enabled();
-    println!("params_64 generated");
-    // let (params_128, vk_128, pk_128) = setup_pkcs1v15_1024_128_enabled();
-    // println!("params_128 generated");
     let mut group = c.benchmark_group("pkcs1v15, 2048 bit public key, sha2 enabled");
     group.sample_size(10);
-    // group.bench_function("message 64 bytes", |b| {
-    //     b.iter(|| prove_pkcs1v15_1024_64_enabled(&params, &vk, &pk))
-    // });
-    // group.bench_function("message 128 bytes", |b| {
-    //     b.iter(|| prove_pkcs1v15_1024_128_enabled(&params, &vk, &pk))
-    // });
+    let (params, vk, pk) = setup_pkcs1v15_2048_64_enabled();
+    group.bench_function("message 64 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_2048_64_enabled(&params, &vk, &pk))
+    });
+    let (params, vk, pk) = setup_pkcs1v15_2048_128_enabled();
+    group.bench_function("message 128 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_2048_128_enabled(&params, &vk, &pk))
+    });
+    let (params, vk, pk) = setup_pkcs1v15_2048_1024_enabled();
     group.bench_function("message 1024 bytes", |b| {
         b.iter(|| prove_pkcs1v15_2048_1024_enabled(&params, &vk, &pk))
     });
@@ -170,8 +168,8 @@ fn bench_pkcs1v15_1024_disabled(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_pkcs1v15_1024_enabled,
-    //bench_pkcs1v15_2048_enabled,
+    //bench_pkcs1v15_1024_enabled,
+    bench_pkcs1v15_2048_enabled,
     //bench_pkcs1v15_1024_disabled
 );
 criterion_main!(benches);

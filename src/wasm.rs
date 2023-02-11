@@ -6,7 +6,7 @@ use crate::{
     impl_pkcs1v15_basic_circuit, AssignedRSAPublicKey, AssignedRSASignature, RSAChip, RSAConfig,
     RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
 };
-use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
+use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicChip, Sha256DynamicConfig};
 use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
 use halo2wrong::{
     curves::FieldExt,
@@ -45,27 +45,70 @@ use wasm_bindgen::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
 
 impl_pkcs1v15_basic_circuit!(
-    Pkcs1v15_1024_64WasmConfig,
-    Pkcs1v15_1024_64WasmCircuit,
-    setup_pkcs1v15_1024_64_wasm,
-    prove_pkcs1v15_1024_64_wasm,
-    17,
+    Pkcs1v15_1024_64EnabledBenchConfig,
+    Pkcs1v15_1024_64EnabledBenchCircuit,
+    setup_pkcs1v15_1024_64_enabled,
+    prove_pkcs1v15_1024_64_enabled,
+    15,
     1024,
     64,
     true
 );
 
 impl_pkcs1v15_basic_circuit!(
-    Pkcs1v15_1024_64WasmNoSha2Config,
-    Pkcs1v15_1024_64WasmNoSha2Circuit,
-    setup_pkcs1v15_1024_64_wasm_no_sha2,
-    prove_pkcs1v15_1024_64_wasm_no_sha2,
-    17,
+    Pkcs1v15_1024_128EnabledBenchConfig,
+    Pkcs1v15_1024_128EnabledBenchCircuit,
+    setup_pkcs1v15_1024_128_enabled,
+    prove_pkcs1v15_1024_128_enabled,
+    15,
     1024,
-    64,
-    false
+    128,
+    true
 );
 
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_1024_1024EnabledBenchConfig,
+    Pkcs1v15_1024_1024EnabledBenchCircuit,
+    setup_pkcs1v15_1024_1024_enabled,
+    prove_pkcs1v15_1024_1024_enabled,
+    16,
+    1024,
+    1024,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_64EnabledBenchConfig,
+    Pkcs1v15_2048_64EnabledBenchCircuit,
+    setup_pkcs1v15_2048_64_enabled,
+    prove_pkcs1v15_2048_64_enabled,
+    17,
+    2048,
+    64,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_128EnabledBenchConfig,
+    Pkcs1v15_2048_128EnabledBenchCircuit,
+    setup_pkcs1v15_2048_128_enabled,
+    prove_pkcs1v15_2048_128_enabled,
+    17,
+    2048,
+    128,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_1024EnabledBenchConfig,
+    Pkcs1v15_2048_1024EnabledBenchCircuit,
+    setup_pkcs1v15_2048_1024_enabled,
+    prove_pkcs1v15_2048_1024_enabled,
+    17,
+    2048,
+    1024,
+    true
+);
 /*#[derive(Debug, Clone)]
 struct RSAWasmConfig<F: Field> {
     rsa_config: RSAConfig,
@@ -189,12 +232,11 @@ impl<F: Field> Circuit<F> for RSAWasm<F> {
         Ok(())
     }
 }*/
-type RSAWasm<F> = Pkcs1v15_1024_64WasmCircuit<F>;
+// type RSAWasm<F> = Pkcs1v15_1024_64_WasmCircuit<F>;
 #[wasm_bindgen]
-pub fn sample_rsa_private_key() -> JsValue {
+pub fn sample_rsa_private_key(bits_len: usize) -> JsValue {
     let mut rng = thread_rng();
-    let private_key =
-        RsaPrivateKey::new(&mut rng, RSAWasm::<Fr>::BITS_LEN).expect("failed to generate a key");
+    let private_key = RsaPrivateKey::new(&mut rng, bits_len).expect("failed to generate a key");
     serde_wasm_bindgen::to_value(&private_key).unwrap()
 }
 
@@ -230,7 +272,7 @@ pub fn sha256_msg(msg: JsValue) -> JsValue {
 }
 
 #[wasm_bindgen]
-pub fn prove_pkcs1v15_1024_128_circuit(
+pub fn prove_pkcs1v15_1024_64_circuit(
     params: JsValue,
     public_key: JsValue,
     msg: JsValue,
@@ -246,8 +288,9 @@ pub fn prove_pkcs1v15_1024_128_circuit(
     let params = Uint8Array::new(&params).to_vec();
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
 
-    let limb_width = RSAWasm::<Fr>::LIMB_WIDTH;
-    let num_limbs = RSAWasm::<Fr>::BITS_LEN / RSAWasm::<Fr>::LIMB_WIDTH;
+    let limb_width = Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
+    let num_limbs = Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::BITS_LEN
+        / Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
 
     let hashed_msg = Sha256::digest(&msg);
 
@@ -259,7 +302,9 @@ pub fn prove_pkcs1v15_1024_128_circuit(
     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
     let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
     let n_unassigned = UnassignedInteger::from(n_limbs.clone());
-    let e_fix = RSAPubE::Fix(BigUint::from(RSAWasm::<Fr>::DEFAULT_E));
+    let e_fix = RSAPubE::Fix(BigUint::from(
+        Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::DEFAULT_E,
+    ));
     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
     // Compute the randomness from the hashed_msg.
@@ -267,22 +312,20 @@ pub fn prove_pkcs1v15_1024_128_circuit(
     for idx in 0..32 {
         seed[idx] = hashed_msg[idx];
     }
-    let r = <Fr as FieldExt>::from_bytes_wide(&seed);
 
-    let circuit = RSAWasm::<Fr> {
+    let circuit = Pkcs1v15_1024_64EnabledBenchCircuit::<Fr> {
         signature,
         public_key,
         msg,
-        r,
         _f: PhantomData,
     };
 
-    let mut column0_public_inputs = n_limbs;
-    let mut hash_fes = hashed_msg
-        .iter()
-        .map(|byte| Fr::from(*byte as u64))
-        .collect::<Vec<Fr>>();
-    column0_public_inputs.append(&mut hash_fes);
+    // let mut column0_public_inputs = n_limbs;
+    // let mut hash_fes = hashed_msg
+    //     .iter()
+    //     .map(|byte| Fr::from(*byte as u64))
+    //     .collect::<Vec<Fr>>();
+    // column0_public_inputs.append(&mut hash_fes);
 
     let vk = keygen_vk(&params, &circuit).unwrap();
     let pk = keygen_pk(&params, vk, &circuit).unwrap();
@@ -293,7 +336,7 @@ pub fn prove_pkcs1v15_1024_128_circuit(
         &params,
         &pk,
         &[circuit],
-        &[&[column0_public_inputs.as_slice()]],
+        &[&[&[]]],
         OsRng,
         &mut transcript,
     )
@@ -303,7 +346,7 @@ pub fn prove_pkcs1v15_1024_128_circuit(
 }
 
 #[wasm_bindgen]
-pub fn verify_pkcs1v15_1024_128_circuit(
+pub fn verify_pkcs1v15_1024_64_circuit(
     params: JsValue,
     public_key: JsValue,
     hashed_msg: JsValue,
@@ -315,53 +358,50 @@ pub fn verify_pkcs1v15_1024_128_circuit(
 
     let params = Uint8Array::new(&params).to_vec();
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-    let circuit = RSAWasm::<Fr>::default();
+    let circuit = Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::default();
     let vk = keygen_vk(&params, &circuit).unwrap();
 
-    let limb_width = RSAWasm::<Fr>::LIMB_WIDTH;
-    let num_limbs = RSAWasm::<Fr>::BITS_LEN / RSAWasm::<Fr>::LIMB_WIDTH;
+    let limb_width = Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
+    let num_limbs = Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::BITS_LEN
+        / Pkcs1v15_1024_64EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
     let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
-    let mut column0_public_inputs = n_limbs;
-    let mut hash_fes = hashed_msg
-        .iter()
-        .map(|byte| Fr::from(*byte as u64))
-        .collect::<Vec<Fr>>();
-    column0_public_inputs.append(&mut hash_fes);
+    // let mut column0_public_inputs = n_limbs;
+    // let mut hash_fes = hashed_msg
+    //     .iter()
+    //     .map(|byte| Fr::from(*byte as u64))
+    //     .collect::<Vec<Fr>>();
+    // column0_public_inputs.append(&mut hash_fes);
 
     let strategy = SingleStrategy::new(&params);
     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-    verify_proof::<_, VerifierGWC<_>, _, _, _>(
-        &params,
-        &vk,
-        strategy,
-        &[&[&column0_public_inputs]],
-        &mut transcript,
-    )
-    .is_ok()
+    verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[&[]]], &mut transcript)
+        .is_ok()
 }
 
-type RSAWasmNoSha2<F> = Pkcs1v15_1024_64WasmNoSha2Circuit<F>;
 #[wasm_bindgen]
-pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
+pub fn prove_pkcs1v15_1024_1024_circuit(
     params: JsValue,
     public_key: JsValue,
-    hashed_msg: JsValue,
+    msg: JsValue,
     signature: JsValue,
 ) -> JsValue {
     console_error_panic_hook::set_once();
 
+    //let msg: Vec<u8> = serde_wasm_bindgen::from_value(msg).unwrap();
+    let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
     let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
 
     let params = Uint8Array::new(&params).to_vec();
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
 
-    let limb_width = RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
-    let num_limbs = RSAWasmNoSha2::<Fr>::BITS_LEN / RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
+    let limb_width = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
+    let num_limbs = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::BITS_LEN
+        / Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
 
-    let hashed_msg: Vec<u8> = serde_wasm_bindgen::from_value(hashed_msg).unwrap();
+    let hashed_msg = Sha256::digest(&msg);
 
     signature.reverse();
     let sign_big = BigUint::from_bytes_le(&signature);
@@ -371,7 +411,9 @@ pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
     let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
     let n_unassigned = UnassignedInteger::from(n_limbs.clone());
-    let e_fix = RSAPubE::Fix(BigUint::from(RSAWasmNoSha2::<Fr>::DEFAULT_E));
+    let e_fix = RSAPubE::Fix(BigUint::from(
+        Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::DEFAULT_E,
+    ));
     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
 
     // Compute the randomness from the hashed_msg.
@@ -379,22 +421,20 @@ pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
     for idx in 0..32 {
         seed[idx] = hashed_msg[idx];
     }
-    let r = <Fr as FieldExt>::from_bytes_wide(&seed);
 
-    let circuit = RSAWasmNoSha2::<Fr> {
+    let circuit = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr> {
         signature,
         public_key,
-        msg: hashed_msg.clone(),
-        r,
+        msg,
         _f: PhantomData,
     };
 
-    let mut column0_public_inputs = n_limbs;
-    let mut hash_fes = hashed_msg
-        .iter()
-        .map(|byte| Fr::from(*byte as u64))
-        .collect::<Vec<Fr>>();
-    column0_public_inputs.append(&mut hash_fes);
+    // let mut column0_public_inputs = n_limbs;
+    // let mut hash_fes = hashed_msg
+    //     .iter()
+    //     .map(|byte| Fr::from(*byte as u64))
+    //     .collect::<Vec<Fr>>();
+    // column0_public_inputs.append(&mut hash_fes);
 
     let vk = keygen_vk(&params, &circuit).unwrap();
     let pk = keygen_pk(&params, vk, &circuit).unwrap();
@@ -405,7 +445,7 @@ pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
         &params,
         &pk,
         &[circuit],
-        &[&[column0_public_inputs.as_slice()]],
+        &[&[&[]]],
         OsRng,
         &mut transcript,
     )
@@ -415,7 +455,7 @@ pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
 }
 
 #[wasm_bindgen]
-pub fn verify_pkcs1v15_1024_128_circuit_no_sha2(
+pub fn verify_pkcs1v15_1024_1024_circuit(
     params: JsValue,
     public_key: JsValue,
     hashed_msg: JsValue,
@@ -427,81 +467,134 @@ pub fn verify_pkcs1v15_1024_128_circuit_no_sha2(
 
     let params = Uint8Array::new(&params).to_vec();
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-    let circuit = RSAWasmNoSha2::<Fr>::default();
+    let circuit = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::default();
     let vk = keygen_vk(&params, &circuit).unwrap();
 
-    let limb_width = RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
-    let num_limbs = RSAWasmNoSha2::<Fr>::BITS_LEN / RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
+    let limb_width = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
+    let num_limbs = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::BITS_LEN
+        / Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
-    let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
-    let mut column0_public_inputs = n_limbs;
-    let mut hash_fes = hashed_msg
-        .iter()
-        .map(|byte| Fr::from(*byte as u64))
-        .collect::<Vec<Fr>>();
-    column0_public_inputs.append(&mut hash_fes);
+    // let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
+    // let mut column0_public_inputs = n_limbs;
+    // let mut hash_fes = hashed_msg
+    //     .iter()
+    //     .map(|byte| Fr::from(*byte as u64))
+    //     .collect::<Vec<Fr>>();
+    // column0_public_inputs.append(&mut hash_fes);
 
     let strategy = SingleStrategy::new(&params);
     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-    verify_proof::<_, VerifierGWC<_>, _, _, _>(
-        &params,
-        &vk,
-        strategy,
-        &[&[&column0_public_inputs]],
-        &mut transcript,
-    )
-    .is_ok()
+    verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[&[]]], &mut transcript)
+        .is_ok()
 }
-/*
-mod tests {
-    use std::{fs::File, io::Read};
 
-    use super::*;
-    use rand::{thread_rng, Rng};
-    use rsa::{Hash, PaddingScheme, RsaPrivateKey, RsaPublicKey};
-    use sha2::Sha256;
+// type RSAWasmNoSha2<F> = Pkcs1v15_1024_64WasmNoSha2Circuit<F>;
+// #[wasm_bindgen]
+// pub fn prove_pkcs1v15_1024_128_circuit_no_sha2(
+//     params: JsValue,
+//     public_key: JsValue,
+//     hashed_msg: JsValue,
+//     signature: JsValue,
+// ) -> JsValue {
+//     console_error_panic_hook::set_once();
 
-    #[test]
-    fn write_params() {
-        let mut file = File::create("params.bin").unwrap();
-        let params = gen_srs(17);
-        params.write(&mut file).unwrap();
-        write_srs(17, "params.bin")
-    }
+//     let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
+//     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
 
-    // #[wasm_bindgen_test]
-    /*fn test_wasm() {
-        let mut params_file = File::open("params.bin").unwrap();
-        let mut params_buf = vec![];
-        params_file.read_to_end(&mut params_buf);
-        let params_js = serde_wasm_bindgen::to_value(&params_buf).unwrap();
+//     let params = Uint8Array::new(&params).to_vec();
+//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
 
-        // 1. Uniformly sample a RSA key pair.
-        let mut rng = thread_rng();
-        let private_key =
-            RsaPrivateKey::new(&mut rng, RSAWasm::<F>::BITS_LEN).expect("failed to generate a key");
-        let public_key = RsaPublicKey::from(&private_key);
-        // 2. Uniformly sample a message.
-        let mut msg: [u8; 128] = [0; 128];
-        for i in 0..128 {
-            msg[i] = rng.gen();
-        }
-        // 3. Compute the SHA256 hash of `msg`.
-        let hashed_msg = Sha256::digest(&msg);
-        // 4. Generate a pkcs1v15 signature.
-        let padding = PaddingScheme::PKCS1v15Sign {
-            hash: Some(Hash::SHA2_256),
-        };
-        let mut sign = private_key
-            .sign(padding, &hashed_msg)
-            .expect("fail to sign a hashed message.");
+//     let limb_width = RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
+//     let num_limbs = RSAWasmNoSha2::<Fr>::BITS_LEN / RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
 
-        let msg_js = serde_wasm_bindgen::to_value(&msg.to_vec()).unwrap();
-        let signature_js = serde_wasm_bindgen::to_value(&sign).unwrap();
-        let public_key_js = serde_wasm_bindgen::to_value(&public_key).unwrap();
+//     let hashed_msg: Vec<u8> = serde_wasm_bindgen::from_value(hashed_msg).unwrap();
 
-        // prove(params_js, msg_js, signature_js, public_key_js);
-    }*/
-}
-*/
+//     signature.reverse();
+//     let sign_big = BigUint::from_bytes_le(&signature);
+//     let sign_limbs = decompose_big::<Fr>(sign_big.clone(), num_limbs, limb_width);
+//     let signature = RSASignature::new(UnassignedInteger::from(sign_limbs));
+
+//     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
+//     let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
+//     let n_unassigned = UnassignedInteger::from(n_limbs.clone());
+//     let e_fix = RSAPubE::Fix(BigUint::from(RSAWasmNoSha2::<Fr>::DEFAULT_E));
+//     let public_key = RSAPublicKey::new(n_unassigned, e_fix);
+
+//     // Compute the randomness from the hashed_msg.
+//     let mut seed = [0; 64];
+//     for idx in 0..32 {
+//         seed[idx] = hashed_msg[idx];
+//     }
+
+//     let circuit = RSAWasmNoSha2::<Fr> {
+//         signature,
+//         public_key,
+//         msg: hashed_msg.clone(),
+//         _f: PhantomData,
+//     };
+
+//     let mut column0_public_inputs = n_limbs;
+//     let mut hash_fes = hashed_msg
+//         .iter()
+//         .map(|byte| Fr::from(*byte as u64))
+//         .collect::<Vec<Fr>>();
+//     column0_public_inputs.append(&mut hash_fes);
+
+//     let vk = keygen_vk(&params, &circuit).unwrap();
+//     let pk = keygen_pk(&params, vk, &circuit).unwrap();
+
+//     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+
+//     create_proof::<KZGCommitmentScheme<Bn256>, ProverGWC<_>, _, _, _, _>(
+//         &params,
+//         &pk,
+//         &[circuit],
+//         &[&[column0_public_inputs.as_slice()]],
+//         OsRng,
+//         &mut transcript,
+//     )
+//     .unwrap();
+//     let proof = transcript.finalize();
+//     serde_wasm_bindgen::to_value(&proof).unwrap()
+// }
+
+// #[wasm_bindgen]
+// pub fn verify_pkcs1v15_1024_128_circuit_no_sha2(
+//     params: JsValue,
+//     public_key: JsValue,
+//     hashed_msg: JsValue,
+//     proof: JsValue,
+// ) -> bool {
+//     console_error_panic_hook::set_once();
+//     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
+//     let hashed_msg: Vec<u8> = serde_wasm_bindgen::from_value(hashed_msg).unwrap();
+
+//     let params = Uint8Array::new(&params).to_vec();
+//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
+//     let circuit = RSAWasmNoSha2::<Fr>::default();
+//     let vk = keygen_vk(&params, &circuit).unwrap();
+
+//     let limb_width = RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
+//     let num_limbs = RSAWasmNoSha2::<Fr>::BITS_LEN / RSAWasmNoSha2::<Fr>::LIMB_WIDTH;
+//     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
+//     let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
+//     let mut column0_public_inputs = n_limbs;
+//     let mut hash_fes = hashed_msg
+//         .iter()
+//         .map(|byte| Fr::from(*byte as u64))
+//         .collect::<Vec<Fr>>();
+//     column0_public_inputs.append(&mut hash_fes);
+
+//     let strategy = SingleStrategy::new(&params);
+//     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
+//     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+//     verify_proof::<_, VerifierGWC<_>, _, _, _>(
+//         &params,
+//         &vk,
+//         strategy,
+//         &[&[&column0_public_inputs]],
+//         &mut transcript,
+//     )
+//     .is_ok()
+// }

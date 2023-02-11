@@ -2,7 +2,7 @@ use crate::{
     big_integer::{BigIntConfig, BigIntInstructions, UnassignedInteger},
     RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
 };
-use halo2_dynamic_sha256::{Field, Sha256Chip, Sha256Config};
+use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicChip, Sha256DynamicConfig};
 use halo2wrong::halo2::{
     circuit::SimpleFloorPlanner,
     plonk::{
@@ -40,14 +40,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
         #[derive(Debug, Clone)]
         struct $config_name<F: Field> {
             rsa_config: RSAConfig,
-            sha256_config: Option<Sha256Config<F>>,
+            sha256_config: Option<Sha256DynamicConfig<F>>,
         }
 
         struct $circuit_name<F: Field> {
             signature: RSASignature<F>,
             public_key: RSAPublicKey<F>,
             msg: Vec<u8>,
-            r: F,
             _f: PhantomData<F>,
         }
 
@@ -62,12 +61,10 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 } else {
                     vec![0; 32]
                 };
-                let r = F::zero();
                 Self {
                     signature,
                     public_key,
                     msg,
-                    r,
                     _f: PhantomData,
                 }
             }
@@ -81,8 +78,8 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             fn rsa_chip(&self, config: RSAConfig) -> RSAChip<F> {
                 RSAChip::new(config, Self::BITS_LEN, Self::EXP_LIMB_BITS)
             }
-            fn sha256_chip(&self, config: Sha256Config<F>) -> Sha256Chip<F> {
-                Sha256Chip::new(config)
+            fn sha256_chip(&self, config: Sha256DynamicConfig<F>) -> Sha256DynamicChip<F> {
+                Sha256DynamicChip::new(config)
             }
         }
 
@@ -98,8 +95,12 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 // 1. Configure `MainGate`.
                 let main_gate_config = MainGate::<F>::configure(meta);
                 // 2. Compute bit length parameters by calling `RSAChip::<F>::compute_range_lens` function.
-                let (composition_bit_lens, overflow_bit_lens) =
+                let (mut composition_bit_lens, mut overflow_bit_lens) =
                     RSAChip::<F>::compute_range_lens(Self::BITS_LEN / Self::LIMB_WIDTH);
+                let (mut sha_composition_bit_lens, mut sha_overflow_bit_lens) =
+                    Sha256DynamicChip::<F>::compute_range_lens();
+                composition_bit_lens.append(&mut sha_composition_bit_lens);
+                overflow_bit_lens.append(&mut sha_overflow_bit_lens);
                 // 3. Configure `RangeChip`.
                 let range_config = RangeChip::<F>::configure(
                     meta,
@@ -114,7 +115,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 let rsa_config = RSAConfig::new(bigint_config);
                 // 6. Configure `Sha256Config`.
                 let sha256_config = if $sha2_chip_enabled {
-                    Some(Sha256Config::configure(meta, $msg_bytes + 64))
+                    let sha256_bit_config = Sha256BitConfig::configure(meta);
+                    Some(Sha256DynamicConfig::new(
+                        main_gate_config.clone(),
+                        range_config.clone(),
+                        sha256_bit_config,
+                        $msg_bytes + 64,
+                    ))
                 } else {
                     None
                 };
@@ -153,17 +160,11 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     // 2. Create a RSA signature verifier from `RSAChip` and `Sha256BitChip`
                     let verifier = RSASignatureVerifier::new(rsa_chip, sha256_chip);
                     // 3. Receives the verification result and the resulting hash of `self.msg` from `RSASignatureVerifier`.
-                    let (is_valid, hashed_msg) = layouter.assign_region(
-                        || "verify pkcs1v15 signature",
-                        |region| {
-                            verifier.verify_pkcs1v15_signature(
-                                region,
-                                &public_key,
-                                &self.msg,
-                                &signature,
-                                self.r,
-                            )
-                        },
+                    let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
+                        layouter.namespace(|| "verify pkcs1v15 signature"),
+                        &public_key,
+                        &self.msg,
+                        &signature,
                     )?;
 
                     // 4. Expose the RSA public key as public input.
@@ -313,12 +314,10 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             for idx in 0..32 {
                 seed[idx] = hashed_msg[idx];
             }
-            let r = <Fr as FieldExt>::from_bytes_wide(&seed);
             let circuit = $circuit_name::<Fr> {
                 signature,
                 public_key,
                 msg,
-                r,
                 _f: PhantomData,
             };
 

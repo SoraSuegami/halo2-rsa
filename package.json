@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "halo2-rsa": "file:pkg"
+  }
+}
