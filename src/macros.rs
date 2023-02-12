@@ -97,10 +97,10 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 // 2. Compute bit length parameters by calling `RSAChip::<F>::compute_range_lens` function.
                 let (mut composition_bit_lens, mut overflow_bit_lens) =
                     RSAChip::<F>::compute_range_lens(Self::BITS_LEN / Self::LIMB_WIDTH);
-                let (mut sha_composition_bit_lens, mut sha_overflow_bit_lens) =
-                    Sha256DynamicChip::<F>::compute_range_lens();
-                composition_bit_lens.append(&mut sha_composition_bit_lens);
-                overflow_bit_lens.append(&mut sha_overflow_bit_lens);
+                // let (mut sha_composition_bit_lens, mut sha_overflow_bit_lens) =
+                //     Sha256DynamicChip::<F>::compute_range_lens();
+                // composition_bit_lens.append(&mut sha_composition_bit_lens);
+                // overflow_bit_lens.append(&mut sha_overflow_bit_lens);
                 // 3. Configure `RangeChip`.
                 let range_config = RangeChip::<F>::configure(
                     meta,
@@ -116,12 +116,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 // 6. Configure `Sha256Config`.
                 let sha256_config = if $sha2_chip_enabled {
                     let sha256_bit_config = Sha256BitConfig::configure(meta);
-                    Some(Sha256DynamicConfig::new(
-                        main_gate_config.clone(),
-                        range_config.clone(),
+                    let sha256_config = Sha256DynamicChip::configure(
+                        meta,
+                        main_gate_config,
                         sha256_bit_config,
                         $msg_bytes + 64,
-                    ))
+                    );
+                    Some(sha256_config)
                 } else {
                     None
                 };
@@ -321,6 +322,12 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 _f: PhantomData,
             };
 
+            let prover = match MockProver::run($k, &circuit, vec![vec![]]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            prover.verify().unwrap();
+
             // 7. Create public inputs
             //let mut column0_public_inputs = n_limbs;
             // if $sha2_chip_enabled {
@@ -356,16 +363,16 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             };
             // 9. Verify the proof.
             {
-                // let strategy = SingleStrategy::new(&params);
-                // let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-                // assert!(verify_proof::<_, VerifierGWC<_>, _, _, _>(
-                //     params,
-                //     vk,
-                //     strategy,
-                //     &[&[&column0_public_inputs]],
-                //     &mut transcript
-                // )
-                // .is_ok());
+                let strategy = SingleStrategy::new(&params);
+                let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+                assert!(verify_proof::<_, VerifierGWC<_>, _, _, _>(
+                    params,
+                    vk,
+                    strategy,
+                    &[&[&[]]],
+                    &mut transcript
+                )
+                .is_ok());
             }
         }
     };

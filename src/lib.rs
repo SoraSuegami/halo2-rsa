@@ -298,9 +298,9 @@ mod test {
                         RSAChip::<F>::compute_range_lens(
                             Self::BITS_LEN / Self::LIMB_WIDTH,
                         );
-                    let (mut sha_composition_bit_lens, mut sha_overflow_bit_lens) = Sha256DynamicChip::<F>::compute_range_lens();
-                    composition_bit_lens.append(&mut sha_composition_bit_lens);
-                    overflow_bit_lens.append(&mut sha_overflow_bit_lens);
+                    // let (mut sha_composition_bit_lens, mut sha_overflow_bit_lens) = Sha256DynamicChip::<F>::compute_range_lens();
+                    // composition_bit_lens.append(&mut sha_composition_bit_lens);
+                    // overflow_bit_lens.append(&mut sha_overflow_bit_lens);
                     let range_config = RangeChip::<F>::configure(
                         meta,
                         &main_gate_config,
@@ -309,8 +309,14 @@ mod test {
                     );
                     let bigint_config = BigIntConfig::new(range_config.clone(), main_gate_config.clone());
                     let rsa_config = RSAConfig::new(bigint_config);
+                    let main_gate_config = MainGate::<F>::configure(meta);
                     let sha256_bit_config = Sha256BitConfig::configure(meta);
-                    let sha256_config = Sha256DynamicConfig::new(main_gate_config.clone(),range_config.clone(),sha256_bit_config, 128+64);
+                    let sha256_config = Sha256DynamicChip::configure(
+                        meta,
+                        main_gate_config,
+                        sha256_bit_config,
+                        128+64,
+                    );
                     Self::Config {
                         rsa_config,
                         sha256_config

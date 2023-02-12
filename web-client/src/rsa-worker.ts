@@ -6,6 +6,20 @@ async function fetch_params() {
   return params;
 }
 
+async function fetch_pk() {
+  const response = await fetch('http://localhost:3000/bench.pk');
+  const bytes = await response.arrayBuffer();
+  const pk = new Uint8Array(bytes);
+  return pk;
+}
+
+async function fetch_vk() {
+  const response = await fetch('http://localhost:3000/bench.vk');
+  const bytes = await response.arrayBuffer();
+  const vk = new Uint8Array(bytes);
+  return vk;
+}
+
 async function sample_rsa_private_key(bits_len: number): Promise<any> {
   const multiThread = await import(
     'halo2-rsa'
@@ -51,6 +65,7 @@ async function sha256_msg(msg: any): Promise<any> {
 }
 
 async function prove_1024_64(
+  pk: any,
   public_key: any,
   msg: any,
   signature: any
@@ -61,13 +76,12 @@ async function prove_1024_64(
   );
   await multiThread.default();
   await multiThread.initThreadPool(navigator.hardwareConcurrency);
-  const ret = multiThread.prove_pkcs1v15_1024_64_circuit(params, public_key, msg, signature);
+  const ret = multiThread.prove_pkcs1v15_1024_64_circuit(params, pk, public_key, msg, signature);
   return ret;
 }
 
 async function verify_1024_64(
-  public_key: any,
-  hashed_msg: any,
+  vk: any,
   proof: any
 ): Promise<boolean> {
   const params = await fetch_params();
@@ -76,39 +90,37 @@ async function verify_1024_64(
   );
   await multiThread.default();
   await multiThread.initThreadPool(navigator.hardwareConcurrency);
-  const ret = multiThread.verify_pkcs1v15_1024_64_circuit(params, public_key, hashed_msg, proof);
+  const ret = multiThread.verify_pkcs1v15_1024_64_circuit(params, vk, proof);
   return ret;
 }
 
-async function prove_1024_1024(
-  public_key: any,
-  msg: any,
-  signature: any
-): Promise<any> {
-  const params = await fetch_params();
-  const multiThread = await import(
-    'halo2-rsa'
-  );
-  await multiThread.default();
-  await multiThread.initThreadPool(navigator.hardwareConcurrency);
-  const ret = multiThread.prove_pkcs1v15_1024_1024_circuit(params, public_key, msg, signature);
-  return ret;
-}
+// async function prove_1024_1024(
+//   public_key: any,
+//   msg: any,
+//   signature: any
+// ): Promise<any> {
+//   const params = await fetch_params();
+//   const multiThread = await import(
+//     'halo2-rsa'
+//   );
+//   await multiThread.default();
+//   await multiThread.initThreadPool(navigator.hardwareConcurrency);
+//   const ret = multiThread.prove_pkcs1v15_1024_1024_circuit(params, public_key, msg, signature);
+//   return ret;
+// }
 
-async function verify_1024_1024(
-  public_key: any,
-  hashed_msg: any,
-  proof: any
-): Promise<boolean> {
-  const params = await fetch_params();
-  const multiThread = await import(
-    'halo2-rsa'
-  );
-  await multiThread.default();
-  await multiThread.initThreadPool(navigator.hardwareConcurrency);
-  const ret = multiThread.verify_pkcs1v15_1024_1024_circuit(params, public_key, hashed_msg, proof);
-  return ret;
-}
+// async function verify_1024_1024(
+//   proof: any
+// ): Promise<boolean> {
+//   const params = await fetch_params();
+//   const multiThread = await import(
+//     'halo2-rsa'
+//   );
+//   await multiThread.default();
+//   await multiThread.initThreadPool(navigator.hardwareConcurrency);
+//   const ret = multiThread.verify_pkcs1v15_1024_1024_circuit(params, proof);
+//   return ret;
+// }
 
 // async function prove_no_sha2(
 //   public_key: any,
@@ -141,14 +153,15 @@ async function verify_1024_1024(
 // }
 
 const exports = {
+  fetch_params,
+  fetch_pk,
+  fetch_vk,
   sign,
   sample_rsa_private_key,
   to_public_key,
   sha256_msg,
   prove_1024_64,
   verify_1024_64,
-  prove_1024_1024,
-  verify_1024_1024,
 };
 export type RSAWorker = typeof exports;
 
