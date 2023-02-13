@@ -74,10 +74,10 @@ macro_rules! impl_pkcs1v15_basic_circuit {
         }
 
         impl<F: FieldExt> $circuit_name<F> {
-            const BITS_LEN: usize = $n_bits;
-            const LIMB_WIDTH: usize = RSAChip::<F>::LIMB_WIDTH;
+            pub const BITS_LEN: usize = $n_bits;
+            pub const LIMB_WIDTH: usize = RSAChip::<F>::LIMB_WIDTH;
             const EXP_LIMB_BITS: usize = 5;
-            const DEFAULT_E: u128 = 65537;
+            pub const DEFAULT_E: u128 = 65537;
             fn rsa_chip(&self, config: RSAConfig) -> RSAChip<F> {
                 RSAChip::new(config, Self::BITS_LEN, Self::EXP_LIMB_BITS)
             }
@@ -167,23 +167,23 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     )?;
 
                     // 4. Expose the RSA public key as public input.
-                    for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
-                        main_gate.expose_public(
-                            layouter.namespace(|| format!("expose {} th public key limb", i)),
-                            limb.assigned_val(),
-                            i,
-                        )?;
-                    }
-                    let num_limb_n = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
+                    // for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                    //     main_gate.expose_public(
+                    //         layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    //         limb.assigned_val(),
+                    //         i,
+                    //     )?;
+                    // }
+                    // let num_limb_n = Self::BITS_LEN / RSAChip::<F>::LIMB_WIDTH;
 
                     //5. Expose the resulting hash as public input.
-                    for (i, val) in hashed_msg.into_iter().enumerate() {
-                        main_gate.expose_public(
-                            layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
-                            val,
-                            num_limb_n + i,
-                        )?;
-                    }
+                    // for (i, val) in hashed_msg.into_iter().enumerate() {
+                    //     main_gate.expose_public(
+                    //         layouter.namespace(|| format!("expose {} th hashed_msg limb", i)),
+                    //         val,
+                    //         num_limb_n + i,
+                    //     )?;
+                    // }
                     // 6. The verification result must be one.
                     layouter.assign_region(
                         || "assert is_valid==1 (sha2 enabled)",
@@ -221,13 +221,13 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                         },
                     )?;
 
-                    for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
-                        main_gate.expose_public(
-                            layouter.namespace(|| format!("expose {} th public key limb", i)),
-                            limb.assigned_val(),
-                            i,
-                        )?;
-                    }
+                    // for (i, limb) in public_key.n.limbs().into_iter().enumerate() {
+                    //     main_gate.expose_public(
+                    //         layouter.namespace(|| format!("expose {} th public key limb", i)),
+                    //         limb.assigned_val(),
+                    //         i,
+                    //     )?;
+                    // }
 
                     layouter.assign_region(
                         || "assert is_valid==1 (sha2 disabled)",
@@ -316,14 +316,14 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             };
 
             // 7. Create public inputs
-            let mut column0_public_inputs = n_limbs;
-            if $sha2_chip_enabled {
-                let mut hash_fes = hashed_msg
-                    .iter()
-                    .map(|byte| Fr::from(*byte as u64))
-                    .collect::<Vec<Fr>>();
-                column0_public_inputs.append(&mut hash_fes);
-            }
+            // let mut column0_public_inputs = n_limbs;
+            // if $sha2_chip_enabled {
+            //     let mut hash_fes = hashed_msg
+            //         .iter()
+            //         .map(|byte| Fr::from(*byte as u64))
+            //         .collect::<Vec<Fr>>();
+            //     column0_public_inputs.append(&mut hash_fes);
+            // }
 
             /*{
                 let prover =
@@ -341,7 +341,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     params,
                     pk,
                     &[circuit],
-                    &[&[&column0_public_inputs]],
+                    &[&[&[]]],
                     OsRng,
                     &mut transcript,
                 )
@@ -356,7 +356,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                     params,
                     vk,
                     strategy,
-                    &[&[&column0_public_inputs]],
+                    &[&[&[]]],
                     &mut transcript
                 )
                 .is_ok());

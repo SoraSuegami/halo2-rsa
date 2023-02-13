@@ -14,27 +14,19 @@ function App() {
   async function test() {
     try {
       console.log("benchmark start");
-      const privateKey = await workerApi.sample_rsa_private_key();
-      let msg = new Uint8Array(new Array<number>(64).fill(0));
+      const privateKey = await workerApi.sample_rsa_private_key(1024);
+      let msg = new Uint8Array([0]);
       const publicKey = await workerApi.to_public_key(privateKey);
       const signature = await workerApi.sign(privateKey, msg);
-      const hashedMsg = await workerApi.sha256_msg(msg);
       const start = performance.now();
-      const proof = await workerApi.prove(publicKey, hashedMsg, signature);
+      const proof = await workerApi.prove_1024_64(publicKey, msg, signature);
       console.log('proof generation', performance.now() - start);
-      let isValid = await workerApi.verify(publicKey, hashedMsg, proof);
+      let isValid = await workerApi.verify_1024_64(proof);
       console.log(isValid)
       console.log("benchmark end");
     } catch (e) {
-      console.log(e)
+      console.error(e)
     }
-    // const proof = await workerApi.prove_play();
-    // console.log('ending', performance.now() - start);
-    // console.log('outside proof', proof);
-
-    // const verification = await workerApi.verify_play(proof, diff_js);
-    // console.log('verified', verification);
-    // console.log('time', performance.now() - start);
   }
 
 
