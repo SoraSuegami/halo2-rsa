@@ -10,13 +10,20 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
-maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_02_02" }
+# halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
+# maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
 halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha256.git", version = "0.1.0", branch = "feat/many_columns" }
 num-bigint = { version = "0.4", features = ["rand"] }
 sha2 = "0.10.6"
 rand = "0.8.5"
 rsa = { version = "0.6.1", features = ["serde"] }
+halo2-base = { version = "0.2.2", default-features = false, features = [
+    "halo2-pse",
+], git = "https://github.com/axiom-crypto/halo2-lib.git" }
+halo2-ecc = { version = "0.2.2", default-features = false, features = [
+    "halo2-pse",
+], git = "https://github.com/axiom-crypto/halo2-lib.git" }
+num-traits = "0.2.15"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
