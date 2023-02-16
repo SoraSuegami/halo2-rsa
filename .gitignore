@@ -19,3 +19,11 @@ Cargo.lock
 
 pkg
 params.bin
+/web-client/public/build/*
+/web-client/public/*.pk
+/web-client/public/*.vk
+/benches/*.bin
+/benches/*.pk
+/benches/*.vk
+/node_modules
+.DS_Store

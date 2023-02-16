@@ -260,7 +260,6 @@ pub fn verify_pkcs1v15_1024_64_circuit(params: JsValue, vk: JsValue, proof: JsVa
         .expect("proof invalid");
     true
 }
-
 #[wasm_bindgen]
 pub fn prove_pkcs1v15_1024_1024_circuit(
     params: JsValue,
@@ -333,6 +332,91 @@ pub fn verify_pkcs1v15_1024_1024_circuit(params: JsValue, vk: JsValue, proof: Js
     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
     let vk: Vec<u8> = Uint8Array::new(&vk).to_vec();
     let vk = VerifyingKey::<G1Affine>::read::<_, Pkcs1v15_1024_1024EnabledBenchCircuit<Fr>>(
+        &mut BufReader::new(&vk[..]),
+        SerdeFormat::RawBytes,
+    )
+    .unwrap();
+
+    let strategy = SingleStrategy::new(&params);
+    let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
+    let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+    verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[&[]]], &mut transcript)
+        .expect("proof invalid");
+    true
+}
+
+#[wasm_bindgen]
+pub fn prove_pkcs1v15_2048_64_circuit(
+    params: JsValue,
+    pk: JsValue,
+    public_key: JsValue,
+    msg: JsValue,
+    signature: JsValue,
+) -> JsValue {
+    console_error_panic_hook::set_once();
+
+    let params = Uint8Array::new(&params).to_vec();
+    let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
+
+    let pk: Vec<u8> = Uint8Array::new(&pk).to_vec();
+    let pk = ProvingKey::<G1Affine>::read::<_, Pkcs1v15_1024_1024EnabledBenchCircuit<Fr>>(
+        &mut BufReader::new(&pk[..]),
+        SerdeFormat::RawBytes,
+    )
+    .unwrap();
+
+    let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
+    let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
+    let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
+
+    let limb_width = Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
+    let num_limbs = Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::BITS_LEN
+        / Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::LIMB_WIDTH;
+
+    signature.reverse();
+    let sign_big = BigUint::from_bytes_le(&signature);
+    let sign_limbs = decompose_big::<Fr>(sign_big.clone(), num_limbs, limb_width);
+    let signature = RSASignature::new(UnassignedInteger::from(sign_limbs));
+
+    let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
+    let n_limbs = decompose_big::<Fr>(n_big.clone(), num_limbs, limb_width);
+    let n_unassigned = UnassignedInteger::from(n_limbs.clone());
+    let e_fix = RSAPubE::Fix(BigUint::from(
+        Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::DEFAULT_E,
+    ));
+    let public_key = RSAPublicKey::new(n_unassigned, e_fix);
+
+    let circuit = Pkcs1v15_2048_64EnabledBenchCircuit::<Fr> {
+        signature,
+        public_key,
+        msg,
+        _f: PhantomData,
+    };
+
+    let proof = {
+        let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+        create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
+            &params,
+            &pk,
+            &[circuit],
+            &[&[&[]]],
+            OsRng,
+            &mut transcript,
+        )
+        .unwrap();
+        transcript.finalize()
+    };
+    serde_wasm_bindgen::to_value(&proof).unwrap()
+}
+
+#[wasm_bindgen]
+pub fn verify_pkcs1v15_2048_64_circuit(params: JsValue, vk: JsValue, proof: JsValue) -> bool {
+    console_error_panic_hook::set_once();
+
+    let params = Uint8Array::new(&params).to_vec();
+    let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
+    let vk: Vec<u8> = Uint8Array::new(&vk).to_vec();
+    let vk = VerifyingKey::<G1Affine>::read::<_, Pkcs1v15_2048_64EnabledBenchCircuit<Fr>>(
         &mut BufReader::new(&vk[..]),
         SerdeFormat::RawBytes,
     )

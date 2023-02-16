@@ -16,14 +16,18 @@ function App() {
       const pk = await workerApi.fetch_pk();
       const vk = await workerApi.fetch_vk();
       console.log("benchmark start");
-      const privateKey = await workerApi.sample_rsa_private_key(1024);
+      const privateKey = await workerApi.sample_rsa_private_key(2048);
       let msg = new Uint8Array([0]);
       const publicKey = await workerApi.to_public_key(privateKey);
       const signature = await workerApi.sign(privateKey, msg);
       const start = performance.now();
-      const proof = await workerApi.prove_1024_64(pk, publicKey, msg, signature);
+      // const proof = await workerApi.prove_1024_64(pk, publicKey, msg, signature);
+      // const proof = await workerApi.prove_1024_1024(pk, publicKey, msg, signature);
+      const proof = await workerApi.prove_2048_64(pk, publicKey, msg, signature);
       console.log('proof generation', performance.now() - start);
-      let isValid = await workerApi.verify_1024_64(vk, proof);
+      // let isValid = await workerApi.verify_1024_64(vk, proof);
+      // let isValid = await workerApi.verify_1024_1024(vk, proof);
+      let isValid = await workerApi.verify_2048_64(vk, proof);
       console.log(isValid)
       console.log("benchmark end");
     } catch (e) {
