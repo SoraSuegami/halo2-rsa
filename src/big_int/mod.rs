@@ -9,19 +9,28 @@ pub use utils::*;
 
 use halo2_base::{halo2_proofs::circuit::Value, utils::PrimeField};
 use halo2_ecc::bigint::CRTInteger;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
 
-pub struct AssignedBigUint<'v, F: PrimeField, T: RangeType> {
+#[derive(Debug, Clone)]
+pub struct AssignedBigInt<'v, F: PrimeField, T: RangeType> {
     crt: CRTInteger<'v, F>,
     _t: PhantomData<T>,
 }
 
-impl<'v, F: PrimeField, T: RangeType> AssignedBigUint<'v, F, T> {
+impl<'v, F: PrimeField, T: RangeType> AssignedBigInt<'v, F, T> {
     pub fn new(crt: CRTInteger<'v, F>) -> Self {
         Self {
             crt,
             _t: PhantomData,
         }
+    }
+
+    pub fn num_limbs(&self) -> usize {
+        self.crt.truncation.limbs.len()
+    }
+
+    pub fn big_int(&self) -> Value<BigInt> {
+        self.crt.value
     }
 }
 
