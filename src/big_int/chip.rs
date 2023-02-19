@@ -113,9 +113,9 @@ impl<F: PrimeField> BigIntInstructions<F> for BigUintConfig<F> {
     /// Given two inputs `a,b`, performs the addition `a + b`.
     fn add<'v>(
         &'v self,
-        ctx: &'v mut Context<'_, F>,
-        a: &'v AssignedBigInt<F, Fresh>,
-        b: &'v AssignedBigInt<F, Fresh>,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedBigInt<F, Fresh>, Error> {
         let gate = self.gate();
         let range = self.range();
@@ -226,6 +226,46 @@ impl<F: PrimeField> BigIntInstructions<F> for BigUintConfig<F> {
         a: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedBigInt<'v, F, Muled>, Error> {
         self.mul(ctx, a, a)
+    }
+
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular addition `a + b mod n`.
+    fn add_mod<'v>(
+        &'v self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+        n: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
+        // 1. Compute `a + b`.
+        // 2. Compute `a + b - n`.
+        // 3. If the subtraction is overflowed, i.e., `a + b < n`, returns `a + b`. Otherwise, returns `a + b - n`.
+        let mut added = self.add(ctx, a, b)?;
+        // The number of limbs of `subed` is `added.num_limbs() = max(a.num_limbs(), b.num_limbs()) + 1`.
+        let (subed, overflow) = self.sub(ctx, &added, n)?;
+        let gate = self.gate();
+        let is_overflow_zero = gate.is_zero(ctx, &overflow);
+        let result = self.select(ctx, &subed, &added, &is_overflow_zero)?;
+        Ok(result)
+    }
+
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular subtraction `a - b mod n`.
+    fn sub_mod<'v>(
+        &'v self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+        n: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
+        // 1. Compute `a - b`.
+        // 2. Compute `n + (a - b)`.
+        // 3. If the subtraction in 1 is overflowed, i.e., `a - b < 0`, returns `a - b + n`. Otherwise, returns `a - b`.
+        // The number of limbs of `subed1` is `max(a.num_limbs(), b.num_limbs())`.
+        let (mut subed, overflow) = self.sub(ctx, a, b)?;
+        let added = self.add(ctx, n, &subed)?;
+        let gate = self.gate();
+        let is_overflow_zero = gate.is_zero(ctx, &overflow);
+        let result = self.select(ctx, &subed, &added, &is_overflow_zero)?;
+        Ok(result)
     }
 
     /// Given two inputs `a,b` and a modulus `n`, performs the modular multiplication `a * b mod n`.

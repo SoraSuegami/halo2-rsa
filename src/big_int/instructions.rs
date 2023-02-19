@@ -51,9 +51,9 @@ pub trait BigIntInstructions<F: PrimeField> {
     /// Given two inputs `a,b`, performs the addition `a + b`.
     fn add<'v>(
         &'v self,
-        ctx: &'v mut Context<'_, F>,
-        a: &'v AssignedBigInt<F, Fresh>,
-        b: &'v AssignedBigInt<F, Fresh>,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedBigInt<F, Fresh>, Error>;
 
     /// Given two inputs `a,b`, performs the subtraction `a - b`.
@@ -79,23 +79,23 @@ pub trait BigIntInstructions<F: PrimeField> {
         a: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedBigInt<'v, F, Muled>, Error>;
 
-    // /// Given two inputs `a,b` and a modulus `n`, performs the modular addition `a + b mod n`.
-    // fn add_mod(
-    //     &self,
-    //     ctx: &mut Context<'_, F>,
-    //     a: &AssignedBigUint<F, Fresh>,
-    //     b: &AssignedBigUint<F, Fresh>,
-    //     n: &AssignedBigUint<F, Fresh>,
-    // ) -> Result<AssignedBigUint<F, Fresh>, Error>;
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular addition `a + b mod n`.
+    fn add_mod<'v>(
+        &'v self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+        n: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<AssignedBigInt<'v, F, Fresh>, Error>;
 
-    // /// Given two inputs `a,b` and a modulus `n`, performs the modular subtraction `a - b mod n`.
-    // fn sub_mod(
-    //     &self,
-    //     ctx: &mut Context<'_, F>,
-    //     a: &AssignedBigUint<F, Fresh>,
-    //     b: &AssignedBigUint<F, Fresh>,
-    //     n: &AssignedBigUint<F, Fresh>,
-    // ) -> Result<AssignedBigUint<F, Fresh>, Error>;
+    /// Given two inputs `a,b` and a modulus `n`, performs the modular subtraction `a - b mod n`.
+    fn sub_mod<'v>(
+        &'v self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+        n: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<AssignedBigInt<'v, F, Fresh>, Error>;
 
     /// Given two inputs `a,b` and a modulus `n`, performs the modular multiplication `a * b mod n`.
     fn mul_mod<'v>(
