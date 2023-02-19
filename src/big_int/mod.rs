@@ -33,6 +33,10 @@ impl<'v, F: PrimeField, T: RangeType> AssignedBigInt<'v, F, T> {
         self.crt.truncation.limbs.len()
     }
 
+    pub fn limbs(&self) -> Vec<AssignedValue<'v, F>> {
+        self.crt.truncation.limbs.clone()
+    }
+
     pub fn big_int(&self) -> Value<BigInt> {
         self.crt.value.clone()
     }
@@ -61,6 +65,12 @@ impl<'v, F: PrimeField> AssignedBigInt<'v, F, Fresh> {
     }
 }
 
+impl<'v, F: PrimeField> AssignedBigInt<'v, F, Muled> {
+    pub(crate) fn to_fresh_unsafe(self) -> AssignedBigInt<'v, F, Fresh> {
+        AssignedBigInt::new(self.crt)
+    }
+}
+
 /// Trait for types representing a range of the limb.
 pub trait RangeType: Clone {}
 
@@ -79,3 +89,80 @@ impl RangeType for Fresh {}
 #[derive(Debug, Clone)]
 pub struct Muled {}
 impl RangeType for Muled {}
+
+/// Auxiliary data for refreshing a [`Muled`] type integer to a [`Fresh`] type integer.
+#[derive(Debug, Clone)]
+pub struct RefreshAux {
+    limb_bits: usize,
+    num_limbs_l: usize,
+    num_limbs_r: usize,
+    increased_limbs_vec: Vec<usize>,
+}
+
+impl RefreshAux {
+    /// Creates a new [`RefreshAux`] corresponding to `num_limbs_l` and `num_limbs_r`.
+    ///
+    /// # Arguments
+    /// * `limb_bits` - bit length of the limb.
+    /// * `num_limbs_l` - a parameter to specify the number of limbs.
+    /// * `num_limbs_r` - a parameter to specify the number of limbs.
+    ///
+    /// If `a` (`b`) is the product of integers `l` and `r`, you must specify the lengths of the limbs of integers `l` and `r` as `num_limbs_l` and `num_limbs_l`, respectively.
+    ///
+    /// # Return values
+    /// Returns a new [`RefreshAux`].
+    pub fn new(limb_bits: usize, num_limbs_l: usize, num_limbs_r: usize) -> Self {
+        let max_limb = (BigUint::from(1usize) << limb_bits) - BigUint::from(1usize);
+        let l_max = vec![max_limb.clone(); num_limbs_l];
+        let r_max = vec![max_limb.clone(); num_limbs_r];
+        let d = num_limbs_l + num_limbs_r - 1;
+        let mut muled = Vec::new();
+        for i in 0..d {
+            let mut j = if num_limbs_r >= i + 1 {
+                0
+            } else {
+                i + 1 - num_limbs_r
+            };
+            muled.push(BigUint::from(0usize));
+            while j < num_limbs_l && j <= i {
+                let k = i - j;
+                muled[i] += &l_max[j] * &r_max[k];
+                j += 1;
+            }
+        }
+        let mut increased_limbs_vec = Vec::new();
+        let mut cur_d = 0;
+        let max_d = d;
+        while cur_d <= max_d {
+            let num_chunks = if muled[cur_d].bits() % (limb_bits as u64) == 0 {
+                muled[cur_d].bits() / (limb_bits as u64)
+            } else {
+                muled[cur_d].bits() / (limb_bits as u64) + 1
+            } as usize;
+            increased_limbs_vec.push(num_chunks - 1);
+            /*if max_d < cur_d + num_chunks - 1 {
+                max_d = cur_d + num_chunks - 1;
+            }*/
+            let mut chunks = Vec::with_capacity(num_chunks);
+            for _ in 0..num_chunks {
+                chunks.push(&muled[cur_d] & &max_limb);
+                muled[cur_d] = &muled[cur_d] >> limb_bits;
+            }
+            assert_eq!(muled[cur_d], BigUint::from(0usize));
+            for j in 0..num_chunks {
+                if muled.len() <= cur_d + j {
+                    muled.push(BigUint::from(0usize));
+                }
+                muled[cur_d + j] += &chunks[j];
+            }
+            cur_d += 1;
+        }
+
+        Self {
+            limb_bits,
+            num_limbs_l,
+            num_limbs_r,
+            increased_limbs_vec,
+        }
+    }
+}
