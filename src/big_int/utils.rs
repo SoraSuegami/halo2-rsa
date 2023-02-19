@@ -75,10 +75,10 @@ pub(crate) fn decompose_u64_digits_to_limbs(
         .collect()
 }
 
-pub(crate) fn big_pow_mod(a: &BigInt, b: &BigInt, n: &BigInt) -> BigInt {
-    let one = BigInt::from(1usize);
-    let two = BigInt::from(2usize);
-    if b == &BigInt::default() {
+pub(crate) fn big_pow_mod(a: &BigUint, b: &BigUint, n: &BigUint) -> BigUint {
+    let one = BigUint::from(1usize);
+    let two = BigUint::from(2usize);
+    if b == &BigUint::default() {
         return one;
     }
     let is_odd = b % &two == one;

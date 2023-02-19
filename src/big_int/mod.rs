@@ -9,65 +9,65 @@ pub use utils::*;
 
 use halo2_base::{halo2_proofs::circuit::Value, utils::PrimeField, AssignedValue};
 use halo2_ecc::bigint::{CRTInteger, OverflowInteger};
-use num_bigint::{BigInt, BigUint};
+use num_bigint::BigUint;
 
 #[derive(Debug, Clone)]
 pub struct AssignedBigInt<'v, F: PrimeField, T: RangeType> {
-    crt: CRTInteger<'v, F>,
+    int: OverflowInteger<'v, F>,
+    value: Value<BigUint>,
     _t: PhantomData<T>,
 }
 
 impl<'v, F: PrimeField, T: RangeType> AssignedBigInt<'v, F, T> {
-    pub fn new(crt: CRTInteger<'v, F>) -> Self {
+    pub fn new(int: OverflowInteger<'v, F>, value: Value<BigUint>) -> Self {
         Self {
-            crt,
+            int,
+            value,
             _t: PhantomData,
         }
     }
 
     pub fn limb(&self, i: usize) -> &AssignedValue<F> {
-        &self.crt.truncation.limbs[i]
+        &self.int.limbs[i]
     }
 
     pub fn num_limbs(&self) -> usize {
-        self.crt.truncation.limbs.len()
+        self.int.limbs.len()
     }
 
     pub fn limbs(&self) -> Vec<AssignedValue<'v, F>> {
-        self.crt.truncation.limbs.clone()
+        self.int.limbs.clone()
     }
 
-    pub fn big_int(&self) -> Value<BigInt> {
-        self.crt.value.clone()
+    pub fn value(&self) -> Value<BigUint> {
+        self.value.clone()
     }
 
     pub fn extend_limbs(&self, num_extend_limbs: usize, zero_value: AssignedValue<'v, F>) -> Self {
         let pre_num_limbs = self.num_limbs();
-        let mut limbs = self.crt.truncation.limbs.clone();
+        let mut limbs = self.int.limbs.clone();
         for _ in 0..num_extend_limbs {
             limbs.push(zero_value.clone());
         }
         assert_eq!(pre_num_limbs + num_extend_limbs, limbs.len());
-        let truncation = OverflowInteger::construct(limbs, pre_num_limbs + num_extend_limbs);
-        let crt =
-            CRTInteger::construct(truncation, self.crt.native.clone(), self.crt.value.clone());
-        Self::new(crt)
+        let int = OverflowInteger::construct(limbs, pre_num_limbs + num_extend_limbs);
+        Self::new(int, self.value())
     }
 
-    pub fn crt_ref(&'v self) -> &'v CRTInteger<'v, F> {
-        &self.crt
+    pub fn int_ref(&'v self) -> &'v OverflowInteger<'v, F> {
+        &self.int
     }
 }
 
 impl<'v, F: PrimeField> AssignedBigInt<'v, F, Fresh> {
     pub fn to_muled(self) -> AssignedBigInt<'v, F, Muled> {
-        AssignedBigInt::new(self.crt)
+        AssignedBigInt::new(self.int, self.value)
     }
 }
 
 impl<'v, F: PrimeField> AssignedBigInt<'v, F, Muled> {
     pub(crate) fn to_fresh_unsafe(self) -> AssignedBigInt<'v, F, Fresh> {
-        AssignedBigInt::new(self.crt)
+        AssignedBigInt::new(self.int, self.value)
     }
 }
 

@@ -4,7 +4,7 @@ use halo2_base::halo2_proofs::circuit::Value;
 use halo2_base::halo2_proofs::plonk::Error;
 use halo2_base::{utils::PrimeField, AssignedValue, Context};
 // use maingate::{AssignedValue, RegionCtx};
-use num_bigint::{BigInt, BigUint};
+use num_bigint::BigUint;
 
 /// Instructions for big-integer operations.
 pub trait BigIntInstructions<F: PrimeField> {
@@ -12,7 +12,7 @@ pub trait BigIntInstructions<F: PrimeField> {
     fn assign_integer<'v>(
         &self,
         ctx: &mut Context<'v, F>,
-        value: Value<BigInt>,
+        value: Value<BigUint>,
         bit_len: usize,
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error>;
 

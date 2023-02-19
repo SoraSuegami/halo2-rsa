@@ -30,7 +30,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
     fn assign_integer<'v>(
         &self,
         ctx: &mut Context<'v, F>,
-        value: Value<BigInt>,
+        value: Value<BigUint>,
         bit_len: usize,
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
         assert_eq!(bit_len % self.limb_bits, 0);
@@ -39,7 +39,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let range = self.range();
         let limbs = value
             .as_ref()
-            .map(|v| decompose_bigint(v, num_limbs, self.limb_bits))
+            .map(|v| decompose_biguint(v, num_limbs, self.limb_bits))
             .transpose_vec(num_limbs);
         let limbs = limbs
             .into_iter()
@@ -49,18 +49,8 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         for limb in assigned_limbs.iter() {
             range.range_check(ctx, &limb, self.limb_bits);
         }
-        let truncation = OverflowInteger::construct(assigned_limbs, self.limb_bits);
-        let native_module = Self::native_modulus_int();
-        let assigned_native = {
-            let native_cells = vec![QuantumCell::Witness(
-                value
-                    .as_ref()
-                    .map(|v| bigint_to_fe::<F>(&(v % native_module))),
-            )];
-            gate.assign_region_last(ctx, native_cells, vec![])
-        };
-        let crt = CRTInteger::construct(truncation, assigned_native, value);
-        Ok(AssignedBigInt::new(crt))
+        let int = OverflowInteger::construct(assigned_limbs, self.limb_bits);
+        Ok(AssignedBigInt::new(int, value))
     }
 
     fn assign_constant<'v>(
@@ -70,11 +60,9 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
         let num_limbs = self.num_limbs(&BigInt::from_biguint(Sign::Plus, value.clone()));
         let limbs = decompose_biguint::<F>(&value, num_limbs, self.limb_bits);
-        let fixed_trunc = FixedOverflowInteger::construct(limbs);
-        let fixed_crt = FixedCRTInteger::construct(fixed_trunc, value);
-        let native_modulus = Self::native_modulus_uint();
-        let crt = fixed_crt.assign(self.gate(), ctx, self.limb_bits, &native_modulus);
-        Ok(AssignedBigInt::new(crt))
+        let fixed_int = FixedOverflowInteger::construct(limbs);
+        let int = fixed_int.assign(self.gate(), ctx, self.limb_bits);
+        Ok(AssignedBigInt::new(int, Value::known(value)))
     }
 
     fn max_value<'v>(
@@ -152,9 +140,8 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         for limb in assigned_limbs.iter() {
             range.range_check(ctx, &limb, self.limb_bits);
         }
-        let truncation = OverflowInteger::construct(assigned_limbs, self.limb_bits);
-        let crt = CRTInteger::construct(truncation, a.crt.native.clone(), a.crt.value.clone());
-        let new_assigned_int = AssignedBigInt::new(crt);
+        let int = OverflowInteger::construct(assigned_limbs, self.limb_bits);
+        let new_assigned_int = AssignedBigInt::new(int, a.value());
         let new_assigned_int_muled = new_assigned_int.to_muled();
         let is_eq = self.is_equal_muled(
             ctx,
@@ -187,8 +174,20 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         b: &AssignedBigInt<'v, F, T>,
         sel: &AssignedValue<'v, F>,
     ) -> Result<AssignedBigInt<'v, F, T>, Error> {
-        let crt = select::crt(self.gate(), ctx, &a.crt, &b.crt, sel);
-        Ok(AssignedBigInt::new(crt))
+        let int = select::assign(self.gate(), ctx, &a.int, &b.int, sel);
+        let value = a
+            .value
+            .as_ref()
+            .zip(b.value.as_ref())
+            .zip(sel.value)
+            .map(|((a, b), sel)| {
+                if sel == F::one() {
+                    a.clone()
+                } else {
+                    b.clone()
+                }
+            });
+        Ok(AssignedBigInt::new(int, value))
     }
 
     /// Given two inputs `a,b`, performs the addition `a + b`.
@@ -200,17 +199,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
         let gate = self.gate();
         let range = self.range();
-        let out_native = gate.add(
-            ctx,
-            QuantumCell::Existing(&a.crt.native),
-            QuantumCell::Existing(&b.crt.native),
-        );
-        let out_value = a
-            .crt
-            .value
-            .as_ref()
-            .zip(b.crt.value.as_ref())
-            .map(|(a, b)| a + b);
+        let out_value = a.value.as_ref().zip(b.value.as_ref()).map(|(a, b)| a + b);
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         let max_n = if n1 < n2 { n2 } else { n1 };
@@ -263,9 +252,8 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         }
         // Add the last carry to the `c_vals`.
         c_vals.push(carrys[max_n].clone());
-        let out_trunc = OverflowInteger::construct(c_vals, self.limb_bits);
-        let crt = CRTInteger::<'v, _>::construct(out_trunc, out_native, out_value);
-        Ok(AssignedBigInt::new(crt))
+        let int = OverflowInteger::construct(c_vals, self.limb_bits);
+        Ok(AssignedBigInt::new(int, out_value))
     }
 
     /// Given two inputs `a,b`, performs the subtraction `a - b`.
@@ -284,9 +272,10 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let a = a.extend_limbs(max_n - n1, zero_value.clone());
         let b = b.extend_limbs(max_n - n2, zero_value.clone());
         let limb_base = biguint_to_fe::<F>(&(BigUint::one() << self.limb_bits));
-        let (crt, overflow) =
-            sub::crt(self.range(), ctx, &a.crt, &b.crt, self.limb_bits, limb_base);
-        Ok((AssignedBigInt::new(crt), overflow))
+        let (int, overflow) =
+            sub::assign(self.range(), ctx, &a.int, &b.int, self.limb_bits, limb_base);
+        let value = a.value.zip(b.value).map(|(a, b)| a - b);
+        Ok((AssignedBigInt::new(int, value), overflow))
     }
 
     fn mul<'v>(
@@ -304,8 +293,9 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let a = a.extend_limbs(num_limbs - n1, zero_value.clone());
         let b = b.extend_limbs(num_limbs - n2, zero_value.clone());
         let num_limbs_log2_ceil = (num_limbs as f32).log2().ceil() as usize;
-        let crt = mul_no_carry::crt(self.gate(), ctx, &a.crt, &b.crt, num_limbs_log2_ceil);
-        Ok(AssignedBigInt::new(crt))
+        let int = mul_no_carry::truncate(self.gate(), ctx, &a.int, &b.int, num_limbs_log2_ceil);
+        let value = a.value.zip(b.value).map(|(a, b)| a * b);
+        Ok(AssignedBigInt::new(int, value))
     }
 
     fn square<'v>(
@@ -382,7 +372,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         assert_eq!(n1, n.num_limbs());
-        let (a_big, b_big, n_big) = (a.big_int(), b.big_int(), n.big_int());
+        let (a_big, b_big, n_big) = (a.value(), b.value(), n.value());
         // 1. Compute the product as `BigUint`.
         let full_prod_big = a_big * b_big;
         // 2. Compute the quotient and remainder when the product is divided by `n`.
@@ -395,27 +385,21 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let assign_q = self.assign_integer(ctx, q_big, n2 * limb_bits)?;
         let assign_n = self.assign_integer(ctx, n_big, n1 * limb_bits)?;
         let assign_prod = self.assign_integer(ctx, prod_big, n1 * limb_bits)?;
-
         // 4. Assert `a * b = quotient_int * n + prod_int`, i.e., `prod_int = (a * b) mod n`.
         let ab = self.mul(ctx, a, b)?;
         let qn = self.mul(ctx, &assign_q, &assign_n)?;
         let gate = self.gate();
+        let n_sum = n1 + n2;
         let qn_prod = {
-            let native = gate.add(
-                ctx,
-                QuantumCell::Existing(&qn.crt.native),
-                QuantumCell::Existing(&assign_prod.crt.native()),
-            );
             let value = qn
-                .crt
                 .value
                 .as_ref()
-                .zip(assign_prod.crt.value.as_ref())
+                .zip(assign_prod.value.as_ref())
                 .map(|(a, b)| a + b);
             let mut limbs = Vec::with_capacity(n1 + n2 - 1);
-            let qn_limbs = qn.crt.truncation.limbs;
-            let prod_limbs = &assign_prod.crt.truncation.limbs[..];
-            for i in 0..limbs.len() {
+            let qn_limbs = qn.limbs();
+            let prod_limbs = assign_prod.limbs();
+            for i in 0..(n_sum - 1) {
                 if i < n1 {
                     limbs.push(gate.add(
                         ctx,
@@ -426,12 +410,11 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
                     limbs.push(qn_limbs[i].clone());
                 }
             }
-            let trunc = OverflowInteger::construct(limbs, self.limb_bits);
-            let out_crt = CRTInteger::construct(trunc, native, value);
-            AssignedBigInt::<F, Muled>::new(out_crt)
+            let int = OverflowInteger::construct(limbs, self.limb_bits);
+            AssignedBigInt::<F, Muled>::new(int, value)
         };
         let is_eq = self.is_equal_muled(ctx, &ab, &qn_prod, n1, n2)?;
-        gate.assert_is_const(ctx, &is_eq, F::zero());
+        gate.assert_is_const(ctx, &is_eq, F::one());
         Ok(assign_prod)
     }
 
@@ -456,7 +439,11 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
         let gate = self.gate();
         let e_bits = gate.num_to_bits(ctx, e, exp_bits);
+        let num_limbs = a.num_limbs();
+        assert_eq!(num_limbs, n.num_limbs());
         let mut acc = self.assign_constant(ctx, BigUint::one())?;
+        let zero = gate.load_zero(ctx);
+        acc = acc.extend_limbs(num_limbs - acc.num_limbs(), zero);
         let mut squared = a.clone();
         for e_bit in e_bits.into_iter() {
             // Compute `acc * squared`.
@@ -477,6 +464,8 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         e: &BigUint,
         n: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
+        let num_limbs = a.num_limbs();
+        assert_eq!(num_limbs, n.num_limbs());
         let num_e_bits = Self::bits_size(&BigInt::from_biguint(Sign::Plus, e.clone()));
         // Decompose `e` into bits.
         let e_bits = e
@@ -490,6 +479,8 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
             .collect::<Vec<bool>>();
         let e_bits = e_bits[0..num_e_bits].to_vec();
         let mut acc = self.assign_constant(ctx, BigUint::from(1usize))?;
+        let zero = self.gate().load_zero(ctx);
+        acc = acc.extend_limbs(num_limbs - acc.num_limbs(), zero);
         let mut squared = a.clone();
         for e_bit in e_bits.into_iter() {
             let cur_sq = squared;
@@ -510,7 +501,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         ctx: &mut Context<'v, F>,
         a: &'v AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedValue<'v, F>, Error> {
-        let out = big_is_zero::crt(self.gate(), ctx, a.crt_ref());
+        let out = big_is_zero::assign(self.gate(), ctx, a.int_ref());
         Ok(out)
     }
 
@@ -521,7 +512,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         a: &AssignedBigInt<'v, F, Fresh>,
         b: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedValue<'v, F>, Error> {
-        Ok(big_is_equal::crt(self.gate(), ctx, &a.crt, &b.crt))
+        Ok(big_is_equal::assign(self.gate(), ctx, &a.int, &b.int))
     }
 
     /// Returns an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Muled`].
@@ -627,17 +618,6 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
                 );
             }
         }
-        let is_native_eq = gate.is_equal(
-            ctx,
-            QuantumCell::Existing(&a.crt.native),
-            QuantumCell::Existing(&b.crt.native),
-        );
-        eq_bit = gate.and(
-            ctx,
-            QuantumCell::Existing(&eq_bit),
-            QuantumCell::Existing(&is_native_eq),
-        );
-        eq_bit.value.map(|v| println!("v {:?}", v));
         Ok(eq_bit)
     }
 
@@ -859,18 +839,19 @@ mod test {
     macro_rules! impl_bigint_test_circuit {
         ($circuit_name:ident, $test_fn_name:ident, $limb_width:expr, $bits_len:expr, $k:expr, $should_be_error:expr, $( $synth:tt )*) => {
             struct $circuit_name<F: PrimeField> {
-                a: BigInt,
-                b: BigInt,
-                n: BigInt,
+                a: BigUint,
+                b: BigUint,
+                n: BigUint,
                 _f: PhantomData<F>,
             }
 
             impl<F: PrimeField> $circuit_name<F> {
                 const LIMB_WIDTH: usize = $limb_width;
                 const BITS_LEN: usize = $bits_len;
-                const NUM_ADVICE:usize = 4;
+                const NUM_ADVICE:usize = 50;
                 const NUM_FIXED:usize = 1;
-                const LOOKUP_BITS:usize = 9;
+                const NUM_LOOKUP_ADVICE:usize = 4;
+                const LOOKUP_BITS:usize = 12;
             }
 
             impl<F: PrimeField> Circuit<F> for $circuit_name<F> {
@@ -882,7 +863,7 @@ mod test {
                 }
 
                 fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-                    let range_config = RangeConfig::configure(meta,Vertical, &[Self::NUM_ADVICE], &[1], Self::NUM_FIXED, Self::LOOKUP_BITS, 0, $k);
+                    let range_config = RangeConfig::configure(meta,Vertical, &[Self::NUM_ADVICE], &[Self::NUM_LOOKUP_ADVICE], Self::NUM_FIXED, Self::LOOKUP_BITS, 0, $k);
                     let bigint_config = BigIntConfig::construct(range_config, Self::LIMB_WIDTH);
                     bigint_config
                 }
@@ -898,12 +879,12 @@ mod test {
                 fn run<F: PrimeField>() {
                     let mut rng = thread_rng();
                     let bits_len = $circuit_name::<F>::BITS_LEN as u64;
-                    let mut n = BigInt::default();
+                    let mut n = BigUint::default();
                     while n.bits() != bits_len {
                         n = rng.sample(RandomBits::new(bits_len));
                     }
-                    let a = rng.sample::<BigInt, _>(RandomBits::new(bits_len)) % &n;
-                    let b = rng.sample::<BigInt, _>(RandomBits::new(bits_len)) % &n;
+                    let a = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
+                    let b = rng.sample::<BigUint, _>(RandomBits::new(bits_len)) % &n;
                     let circuit = $circuit_name::<F> {
                         a,
                         b,
@@ -1124,7 +1105,7 @@ mod test {
         test_mul_circuit,
         64,
         2048,
-        14,
+        13,
         false,
         fn synthesize(
             &self,
@@ -1325,8 +1306,8 @@ mod test {
     // );
 
     impl_bigint_test_circuit!(
-        TestRefreshCircuit,
-        test_refresh_circuit,
+        TestMuledEqualCircuit,
+        test_muled_equal_circuit,
         64,
         2048,
         13,
@@ -1660,6 +1641,55 @@ mod test {
     //     }
     // );
 
+    impl_bigint_test_circuit!(
+        TestMulModCircuit,
+        test_mul_mod_circuit,
+        64,
+        2048,
+        13,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.range().load_lookup_table(&mut layouter)?;
+            let mut first_pass = SKIP_FIRST_PASS;
+            layouter.assign_region(
+                || "random refresh test",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
+                    let mut aux = config.new_context(region);
+                    let ctx = &mut aux;
+                    let a_assigned =
+                        config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
+                    let b_assigned =
+                        config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
+                    let n_assigned =
+                        config.assign_integer(ctx, Value::known(self.n.clone()), Self::BITS_LEN)?;
+                    let ab = config.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
+                    let ba = config.mul_mod(ctx, &b_assigned, &a_assigned, &n_assigned)?;
+                    let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+                    let is_eq = config.is_equal_fresh(ctx, &ab, &ba)?;
+                    config.gate().assert_is_const(ctx, &is_eq, F::one());
+                    config.range().finalize(ctx);
+                    {
+                        println!("total advice cells: {}", ctx.total_advice);
+                        let const_rows = ctx.total_fixed + 1;
+                        println!("maximum rows used by a fixed column: {const_rows}");
+                        println!("lookup cells used: {}", ctx.cells_to_lookup.len());
+                    }
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    );
+
     // impl_bigint_test_circuit!(
     //     TestMulModEqualCircuit,
     //     test_module_mul_equal_circuit,
@@ -1829,7 +1859,7 @@ mod test {
         test_pow_mod_fixed_exp_circuit,
         64,
         2048,
-        11,
+        13,
         false,
         fn synthesize(
             &self,
