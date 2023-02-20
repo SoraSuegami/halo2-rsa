@@ -80,7 +80,6 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         a: &AssignedBigInt<'v, F, Muled>,
         aux: &RefreshAux,
     ) -> Result<AssignedBigInt<'v, F, Fresh>, Error> {
-        let limbs = a.limbs();
         // For converting `a` to a [`Fresh`] type integer, we decompose each limb of `a` into `self.limb_width`-bits values.
         assert_eq!(self.limb_bits, aux.limb_bits);
         // The i-th value of `aux.increased_limbs_vec` represents the number of increased values when converting i-th limb of `a` into `self.limb_width`-bits values.
@@ -92,66 +91,58 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let num_limbs_fresh = increased_limbs_vec.len();
 
         let gate = self.gate();
-        let zero_val = gate.load_constant(ctx, F::zero());
         let mut refreshed_limbs = Vec::with_capacity(num_limbs_fresh);
+        let zero_assigned = gate.load_zero(ctx);
+        let a_limbs = a.limbs();
         for i in 0..a.num_limbs() {
-            refreshed_limbs.push(a.limb(i).value);
+            refreshed_limbs.push(a_limbs[i].clone());
         }
         for _ in 0..(num_limbs_fresh - a.num_limbs()) {
-            refreshed_limbs.push(Value::known(F::zero()));
+            refreshed_limbs.push(zero_assigned.clone());
         }
-        let limb_max = BigInt::from(1usize) << self.limb_bits;
+        let limb_max = BigInt::from(1u64) << self.limb_bits;
         for i in 0..num_limbs_fresh {
             // `i`-th overflowing limb value.
             let mut limb = refreshed_limbs[i].clone();
             for j in 0..(increased_limbs_vec[i] + 1) {
                 // `n` is lower `self.limb_width` bits of `limb`.
                 // `q` is any other upper bits.
-                let (q, n) = limb
-                    .as_ref()
-                    .map(|limb| {
-                        (
-                            &fe_to_bigint(limb) / &limb_max,
-                            &fe_to_bigint(limb) % &limb_max,
-                        )
-                    })
-                    .map(|(q, n)| (bigint_to_fe(&q), bigint_to_fe(&n)))
-                    .unzip();
+                let (q, n) = self.div_mod_unsafe(ctx, &limb, &limb_max);
                 if j == 0 {
                     // When `j=0`, `n` is a new `i`-th limb value.
                     refreshed_limbs[i] = n;
                 } else {
                     // When `j>0`, `n` is carried to the `i+j`-th limb.
-                    refreshed_limbs[i + j] =
-                        refreshed_limbs[i + j].zip(n).map(|(limb, n)| limb + n);
+                    refreshed_limbs[i + j] = gate.add(
+                        ctx,
+                        QuantumCell::Existing(&refreshed_limbs[i + j]),
+                        QuantumCell::Existing(&n),
+                    );
                 }
                 // We use `q` as the next `limb`.
                 limb = q;
             }
             // `limb` should be zero because we decomposed all bits of the `i`-th overflowing limb value into `self.limb_width` bits values.
-            // limb.map(|limb| assert!(limb.is_zero().into()));
+            gate.assert_is_const(ctx, &limb, F::zero());
         }
-        let limbs = refreshed_limbs
-            .into_iter()
-            .map(|v| QuantumCell::Witness(v))
-            .collect::<Vec<QuantumCell<F>>>();
-        let assigned_limbs: Vec<AssignedValue<F>> = gate.assign_region(ctx, limbs, vec![]);
         let range = self.range();
-        for limb in assigned_limbs.iter() {
+        for limb in refreshed_limbs.iter() {
             range.range_check(ctx, &limb, self.limb_bits);
         }
-        let int = OverflowInteger::construct(assigned_limbs, self.limb_bits);
+        let int = OverflowInteger::construct(refreshed_limbs, self.limb_bits);
+        // refreshed_value.map(|v| println!("refreshed_value {:?}", v));
+        // a.value().map(|v| println!("a {:?}", v));
         let new_assigned_int = AssignedBigInt::new(int, a.value());
-        let new_assigned_int_muled = new_assigned_int.to_muled();
-        let is_eq = self.is_equal_muled(
-            ctx,
-            &a,
-            &new_assigned_int_muled,
-            aux.num_limbs_l,
-            aux.num_limbs_r,
-        )?;
-        gate.assert_is_const(ctx, &is_eq, F::one());
-        let new_assigned_int = new_assigned_int_muled.to_fresh_unsafe();
+        // let new_assigned_int_muled = new_assigned_int.to_muled();
+        // let is_eq = self.is_equal_muled(
+        //     ctx,
+        //     &a,
+        //     &new_assigned_int_muled,
+        //     aux.num_limbs_l,
+        //     aux.num_limbs_r,
+        // )?;
+        // gate.assert_is_const(ctx, &is_eq, F::one());
+        // let new_assigned_int = new_assigned_int_muled.to_fresh_unsafe();
         Ok(new_assigned_int)
         // let p = self.compute_max_mul(num_limbs_l, num_limbs_r);
         // let new_num_limbs = self.num_limbs(&p) + 10;
@@ -287,8 +278,7 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let gate = self.gate();
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
-        let max_n = if n1 < n2 { n2 + 1 } else { n1 + 1 };
-        let num_limbs = 2 * max_n - 1;
+        let num_limbs = n1 + n2 - 1;
         let zero_value = gate.load_zero(ctx);
         let a = a.extend_limbs(num_limbs - n1, zero_value.clone());
         let b = b.extend_limbs(num_limbs - n2, zero_value.clone());
@@ -686,6 +676,44 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
     ) -> Result<AssignedValue<'v, F>, Error> {
         self.is_less_than(ctx, a, n)
     }
+
+    /// Assert that an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
+    fn assert_equal_fresh<'v>(
+        &self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<(), Error> {
+        let result = self.is_equal_fresh(ctx, a, b)?;
+        self.gate().assert_is_const(ctx, &result, F::one());
+        Ok(())
+    }
+
+    /// Assert that an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
+    fn assert_equal_muled<'v>(
+        &self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Muled>,
+        b: &AssignedBigInt<'v, F, Muled>,
+        num_limbs_l: usize,
+        num_limbs_r: usize,
+    ) -> Result<(), Error> {
+        let result = self.is_equal_muled(ctx, a, b, num_limbs_l, num_limbs_r)?;
+        self.gate().assert_is_const(ctx, &result, F::one());
+        Ok(())
+    }
+
+    /// Assert that an assigned bit representing whether `a` is in the order-`n` finite field.
+    fn assert_in_field<'v>(
+        &self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<(), Error> {
+        let result = self.is_in_field(ctx, a, b)?;
+        self.gate().assert_is_const(ctx, &result, F::one());
+        Ok(())
+    }
 }
 
 impl<F: PrimeField> BigIntConfig<F> {
@@ -906,47 +934,50 @@ mod test {
         };
     }
 
-    // impl_bigint_test_circuit!(
-    //     TestAddCircuit,
-    //     test_add_circuit,
-    //     64,
-    //     2048,
-    //     false,
-    //     fn synthesize(
-    //         &self,
-    //         config: Self::Config,
-    //         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-    //     ) -> Result<(), Error> {
-    //         let bigint_chip = self.bigint_chip(config);
-    //         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-    //         layouter.assign_region(
-    //             || "random add test",
-    //             |region| {
-    //                 let offset = 0;
-    //                 let ctx = &mut RegionCtx::new(region, offset);
-    //                 let sum = &self.a + &self.b;
-    //                 //let carry = &all_sum >> Self::BITS_LEN;
-    //                 //let base = BigUint::from(1usize) << Self::BITS_LEN;
-    //                 //let sum = &all_sum - &carry * &base;
-    //                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a_unassigned = UnassignedInteger::from(a_limbs);
-    //                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let b_unassigned = UnassignedInteger::from(b_limbs);
-    //                 let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-    //                 let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-    //                 let sum_assigned_int =
-    //                     bigint_chip.assign_constant(ctx, sum, Self::BITS_LEN + 1)?;
-    //                 let added = bigint_chip.add(ctx, &a_assigned, &b_assigned)?;
-    //                 bigint_chip.assert_equal_fresh(ctx, &sum_assigned_int, &added)?;
-    //                 Ok(())
-    //             },
-    //         )?;
-    //         let range_chip = bigint_chip.range_chip();
-    //         range_chip.load_table(&mut layouter)?;
-    //         //range_chip.load_overflow_tables(&mut layouter)?;
-    //         Ok(())
-    //     }
-    // );
+    impl_bigint_test_circuit!(
+        TestAddCircuit,
+        test_add_circuit,
+        64,
+        2048,
+        13,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.range().load_lookup_table(&mut layouter)?;
+            let mut first_pass = SKIP_FIRST_PASS;
+            layouter.assign_region(
+                || "random add test",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
+                    let mut aux = config.new_context(region);
+                    let ctx = &mut aux;
+                    let a_assigned =
+                        config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
+                    let b_assigned =
+                        config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
+                    let ab = config.add(ctx, &a_assigned, &b_assigned)?;
+                    let ba = config.add(ctx, &b_assigned, &a_assigned)?;
+                    config.assert_equal_fresh(ctx, &ab, &ba)?;
+                    config.range().finalize(ctx);
+                    {
+                        println!("total advice cells: {}", ctx.total_advice);
+                        let const_rows = ctx.total_fixed + 1;
+                        println!("maximum rows used by a fixed column: {const_rows}");
+                        println!("lookup cells used: {}", ctx.cells_to_lookup.len());
+                    }
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    );
 
     // impl_bigint_test_circuit!(
     //     TestButAddCircuit,
@@ -1126,9 +1157,9 @@ mod test {
                     let ctx = &mut aux;
                     let a_assigned =
                         config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
-                    // let b_assigned =
-                    //     config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
-                    // config.mul(ctx, &a_assigned, &b_assigned)?;
+                    let b_assigned =
+                        config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
+                    config.mul(ctx, &a_assigned, &b_assigned)?;
                     config.range().finalize(ctx);
                     {
                         println!("total advice cells: {}", ctx.total_advice);
@@ -1142,49 +1173,6 @@ mod test {
             Ok(())
         }
     );
-
-    // impl_bigint_test_circuit!(
-    //     TestMuledEqualCircuit,
-    //     test_muled_equal_circuit,
-    //     64,
-    //     2048,
-    //     false,
-    //     fn synthesize(
-    //         &self,
-    //         config: Self::Config,
-    //         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-    //     ) -> Result<(), Error> {
-    //         let bigint_chip = self.bigint_chip(config);
-    //         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-    //         layouter.assign_region(
-    //             || "random assert_equal_muled test",
-    //             |region| {
-    //                 let offset = 0;
-    //                 let ctx = &mut RegionCtx::new(region, offset);
-    //                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a_unassigned = UnassignedInteger::from(a_limbs);
-    //                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let b_unassigned = UnassignedInteger::from(b_limbs);
-    //                 let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-    //                 let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-    //                 let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
-    //                 let ba = bigint_chip.mul(ctx, &b_assigned, &a_assigned)?;
-    //                 bigint_chip.assert_equal_muled(
-    //                     ctx,
-    //                     &ab,
-    //                     &ba,
-    //                     a_assigned.num_limbs(),
-    //                     b_assigned.num_limbs(),
-    //                 )?;
-    //                 Ok(())
-    //             },
-    //         )?;
-    //         let range_chip = bigint_chip.range_chip();
-    //         range_chip.load_table(&mut layouter)?;
-    //         //range_chip.load_overflow_tables(&mut layouter)?;
-    //         Ok(())
-    //     }
-    // );
 
     // impl_bigint_test_circuit!(
     //     TestBadMuledEqualCircuit,
@@ -1236,40 +1224,49 @@ mod test {
     //     }
     // );
 
-    // impl_bigint_test_circuit!(
-    //     TestFreshEqualCircuit,
-    //     test_fresh_equal_circuit,
-    //     64,
-    //     2048,
-    //     false,
-    //     fn synthesize(
-    //         &self,
-    //         config: Self::Config,
-    //         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-    //     ) -> Result<(), Error> {
-    //         let bigint_chip = self.bigint_chip(config);
-    //         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-    //         layouter.assign_region(
-    //             || "random assert_equal_fresh test",
-    //             |region| {
-    //                 let offset = 0;
-    //                 let ctx = &mut RegionCtx::new(region, offset);
-    //                 let a1_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a1_unassigned = UnassignedInteger::from(a1_limbs);
-    //                 let a2_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a2_unassigned = UnassignedInteger::from(a2_limbs);
-    //                 let a1_assigned = bigint_chip.assign_integer(ctx, a1_unassigned)?;
-    //                 let a2_assigned = bigint_chip.assign_integer(ctx, a2_unassigned)?;
-    //                 bigint_chip.assert_equal_fresh(ctx, &a1_assigned, &a2_assigned)?;
-    //                 Ok(())
-    //             },
-    //         )?;
-    //         let range_chip = bigint_chip.range_chip();
-    //         range_chip.load_table(&mut layouter)?;
-    //         //range_chip.load_overflow_tables(&mut layouter)?;
-    //         Ok(())
-    //     }
-    // );
+    impl_bigint_test_circuit!(
+        TestFreshEqualCircuit,
+        test_fresh_equal_circuit,
+        64,
+        2048,
+        13,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.range().load_lookup_table(&mut layouter)?;
+            let mut first_pass = SKIP_FIRST_PASS;
+            layouter.assign_region(
+                || "random add test",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
+                    let mut aux = config.new_context(region);
+                    let ctx = &mut aux;
+                    let a_assigned =
+                        config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
+                    let b_assigned =
+                        config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
+                    config.assert_equal_fresh(ctx, &a_assigned, &a_assigned)?;
+                    config.assert_equal_fresh(ctx, &b_assigned, &b_assigned)?;
+                    config.range().finalize(ctx);
+                    {
+                        println!("total advice cells: {}", ctx.total_advice);
+                        let const_rows = ctx.total_fixed + 1;
+                        println!("maximum rows used by a fixed column: {const_rows}");
+                        println!("lookup cells used: {}", ctx.cells_to_lookup.len());
+                    }
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    );
 
     // impl_bigint_test_circuit!(
     //     TestBadFreshEqualCircuit,
@@ -1336,8 +1333,7 @@ mod test {
                     let ab = config.mul(ctx, &a_assigned, &b_assigned)?;
                     let ba = config.mul(ctx, &b_assigned, &a_assigned)?;
                     let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-                    let is_eq = config.is_equal_muled(ctx, &ab, &ba, num_limbs, num_limbs)?;
-                    config.gate().assert_is_const(ctx, &is_eq, F::one());
+                    config.assert_equal_muled(ctx, &ab, &ba, num_limbs, num_limbs)?;
                     config.range().finalize(ctx);
                     {
                         println!("total advice cells: {}", ctx.total_advice);
@@ -1352,92 +1348,108 @@ mod test {
         }
     );
 
-    // impl_bigint_test_circuit!(
-    //     TestRefreshCircuit,
-    //     test_refresh_circuit,
-    //     64,
-    //     2048,
-    //     false,
-    //     fn synthesize(
-    //         &self,
-    //         config: Self::Config,
-    //         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-    //     ) -> Result<(), Error> {
-    //         let bigint_chip = self.bigint_chip(config);
-    //         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-    //         layouter.assign_region(
-    //             || "random refresh test",
-    //             |region| {
-    //                 let offset = 0;
-    //                 let ctx = &mut RegionCtx::new(region, offset);
-    //                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a_unassigned = UnassignedInteger::from(a_limbs);
-    //                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let b_unassigned = UnassignedInteger::from(b_limbs);
-    //                 let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-    //                 let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-    //                 let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
-    //                 let ba = bigint_chip.mul(ctx, &b_assigned, &a_assigned)?;
-    //                 let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
-    //                 let ab_refreshed = bigint_chip.refresh(ctx, &ab, &aux)?;
-    //                 let ba_refreshed = bigint_chip.refresh(ctx, &ba, &aux)?;
-    //                 bigint_chip.assert_equal_fresh(ctx, &ab_refreshed, &ba_refreshed)?;
-    //                 Ok(())
-    //             },
-    //         )?;
-    //         let range_chip = bigint_chip.range_chip();
-    //         range_chip.load_table(&mut layouter)?;
-    //         //range_chip.load_overflow_tables(&mut layouter)?;
-    //         Ok(())
-    //     }
-    // );
+    impl_bigint_test_circuit!(
+        TestRefreshCircuit,
+        test_refresh_circuit,
+        64,
+        2048,
+        13,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.range().load_lookup_table(&mut layouter)?;
+            let mut first_pass = SKIP_FIRST_PASS;
+            layouter.assign_region(
+                || "random refresh test",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
 
-    // impl_bigint_test_circuit!(
-    //     TestThreeMulCircuit,
-    //     test_three_mul_circuit,
-    //     64,
-    //     2048,
-    //     false,
-    //     fn synthesize(
-    //         &self,
-    //         config: Self::Config,
-    //         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-    //     ) -> Result<(), Error> {
-    //         let bigint_chip = self.bigint_chip(config);
-    //         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-    //         layouter.assign_region(
-    //             || "multiplication test with three integers",
-    //             |region| {
-    //                 let offset = 0;
-    //                 let ctx = &mut RegionCtx::new(region, offset);
-    //                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a_unassigned = UnassignedInteger::from(a_limbs);
-    //                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let b_unassigned = UnassignedInteger::from(b_limbs);
-    //                 let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let n_unassigned = UnassignedInteger::from(n_limbs);
-    //                 let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-    //                 let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-    //                 let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
-    //                 let ab = bigint_chip.mul(ctx, &a_assigned, &b_assigned)?;
-    //                 let bn = bigint_chip.mul(ctx, &b_assigned, &n_assigned)?;
-    //                 let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
-    //                 let ab_refreshed = bigint_chip.refresh(ctx, &ab, &aux)?;
-    //                 let bn_refreshed = bigint_chip.refresh(ctx, &bn, &aux)?;
-    //                 let num1 = ab_refreshed.num_limbs();
-    //                 let num2 = n_assigned.num_limbs();
-    //                 let ab_n = bigint_chip.mul(ctx, &ab_refreshed, &n_assigned)?;
-    //                 let bn_a = bigint_chip.mul(ctx, &bn_refreshed, &a_assigned)?;
-    //                 bigint_chip.assert_equal_muled(ctx, &ab_n, &bn_a, num1, num2)?;
-    //                 Ok(())
-    //             },
-    //         )?;
-    //         let range_chip = bigint_chip.range_chip();
-    //         range_chip.load_table(&mut layouter)?;
-    //         //range_chip.load_overflow_tables(&mut layouter)?;
-    //         Ok(())
-    //     }
-    // );
+                    let mut aux = config.new_context(region);
+                    let ctx = &mut aux;
+                    let a_assigned =
+                        config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
+                    let b_assigned =
+                        config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
+                    let ab = config.mul(ctx, &a_assigned, &b_assigned)?;
+                    let ba = config.mul(ctx, &b_assigned, &a_assigned)?;
+                    let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+                    let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
+                    let ab_refreshed = config.refresh(ctx, &ab, &aux)?;
+                    let ba_refreshed = config.refresh(ctx, &ba, &aux)?;
+                    config.assert_equal_fresh(ctx, &ab_refreshed, &ba_refreshed)?;
+                    config.range().finalize(ctx);
+                    {
+                        println!("total advice cells: {}", ctx.total_advice);
+                        let const_rows = ctx.total_fixed + 1;
+                        println!("maximum rows used by a fixed column: {const_rows}");
+                        println!("lookup cells used: {}", ctx.cells_to_lookup.len());
+                    }
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    );
+
+    impl_bigint_test_circuit!(
+        TestThreeMulCircuit,
+        test_three_mul_circuit,
+        64,
+        2048,
+        13,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.range().load_lookup_table(&mut layouter)?;
+            let mut first_pass = SKIP_FIRST_PASS;
+            layouter.assign_region(
+                || "random mul test",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
+                    let mut aux = config.new_context(region);
+                    let ctx = &mut aux;
+                    let a_assigned =
+                        config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
+                    let b_assigned =
+                        config.assign_integer(ctx, Value::known(self.b.clone()), Self::BITS_LEN)?;
+                    let n_assigned =
+                        config.assign_integer(ctx, Value::known(self.n.clone()), Self::BITS_LEN)?;
+                    let ab = config.mul(ctx, &a_assigned, &b_assigned)?;
+                    let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
+                    let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
+                    let ab_refreshed = config.refresh(ctx, &ab, &aux)?;
+                    let abn = config.mul(ctx, &ab_refreshed, &n_assigned)?;
+                    let nb = config.mul(ctx, &n_assigned, &b_assigned)?;
+                    let nb_refreshed = config.refresh(ctx, &nb, &aux)?;
+                    let nba = config.mul(ctx, &nb_refreshed, &a_assigned)?;
+                    // [TODO] Error in the assert_equal_muled.
+                    config.assert_equal_muled(ctx, &abn, &nba, num_limbs, num_limbs)?;
+                    config.range().finalize(ctx);
+                    {
+                        println!("total advice cells: {}", ctx.total_advice);
+                        let const_rows = ctx.total_fixed + 1;
+                        println!("maximum rows used by a fixed column: {const_rows}");
+                        println!("lookup cells used: {}", ctx.cells_to_lookup.len());
+                    }
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    );
 
     // impl_bigint_test_circuit!(
     //     TestAddModCircuit,

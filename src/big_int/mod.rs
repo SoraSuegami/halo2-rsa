@@ -112,24 +112,39 @@ impl RefreshAux {
     /// # Return values
     /// Returns a new [`RefreshAux`].
     pub fn new(limb_bits: usize, num_limbs_l: usize, num_limbs_r: usize) -> Self {
-        let max_limb = (BigUint::from(1usize) << limb_bits) - BigUint::from(1usize);
-        let l_max = vec![max_limb.clone(); num_limbs_l];
-        let r_max = vec![max_limb.clone(); num_limbs_r];
+        let max_limb = (BigUint::from(1u64) << limb_bits) - BigUint::from(1u64);
+        let mut l_max = vec![max_limb.clone(); num_limbs_l];
+        let mut r_max = vec![max_limb.clone(); num_limbs_r];
         let d = num_limbs_l + num_limbs_r - 1;
+        while l_max.len() != d {
+            l_max.push(BigUint::from(0u64));
+        }
+        while r_max.len() != d {
+            r_max.push(BigUint::from(0u64));
+        }
         let mut muled = Vec::new();
         for i in 0..d {
-            let mut j = if num_limbs_r >= i + 1 {
-                0
-            } else {
-                i + 1 - num_limbs_r
-            };
-            muled.push(BigUint::from(0usize));
-            while j < num_limbs_l && j <= i {
-                let k = i - j;
-                muled[i] += &l_max[j] * &r_max[k];
-                j += 1;
+            let ls = &l_max[0..=i];
+            let rs = &r_max[0..=i];
+            let mut sum = BigUint::from(0u64);
+            for (l, r) in ls.into_iter().zip(rs.into_iter().rev()) {
+                sum += l * r;
             }
+            muled.push(sum);
         }
+        // for i in 0..d {
+        //     let mut j = if num_limbs_r >= i + 1 {
+        //         0
+        //     } else {
+        //         i + 1 - num_limbs_r
+        //     };
+        //     muled.push(BigUint::from(0usize));
+        //     while j < num_limbs_l && j <= i {
+        //         let k = i - j;
+        //         muled[i] += &l_max[j] * &r_max[k];
+        //         j += 1;
+        //     }
+        // }
         let mut increased_limbs_vec = Vec::new();
         let mut cur_d = 0;
         let max_d = d;

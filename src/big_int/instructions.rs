@@ -196,4 +196,30 @@ pub trait BigIntInstructions<F: PrimeField> {
         a: &AssignedBigInt<'v, F, Fresh>,
         b: &AssignedBigInt<'v, F, Fresh>,
     ) -> Result<AssignedValue<'v, F>, Error>;
+
+    /// Assert that an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
+    fn assert_equal_fresh<'v>(
+        &self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<(), Error>;
+
+    /// Assert that an assigned bit representing whether `a` and `b` are equivalent, whose [`RangeType`] is [`Fresh`].
+    fn assert_equal_muled<'v>(
+        &self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Muled>,
+        b: &AssignedBigInt<'v, F, Muled>,
+        num_limbs_l: usize,
+        num_limbs_r: usize,
+    ) -> Result<(), Error>;
+
+    /// Assert that an assigned bit representing whether `a` is in the order-`n` finite field.
+    fn assert_in_field<'v>(
+        &self,
+        ctx: &mut Context<'v, F>,
+        a: &AssignedBigInt<'v, F, Fresh>,
+        b: &AssignedBigInt<'v, F, Fresh>,
+    ) -> Result<(), Error>;
 }
