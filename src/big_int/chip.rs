@@ -265,7 +265,10 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let limb_base = biguint_to_fe::<F>(&(BigUint::one() << self.limb_bits));
         let (int, overflow) =
             sub::assign(self.range(), ctx, &a.int, &b.int, self.limb_bits, limb_base);
-        let value = a.value.zip(b.value).map(|(a, b)| a - b);
+        let value = a
+            .value
+            .zip(b.value)
+            .map(|(a, b)| if a >= b { a - b } else { b - a });
         Ok((AssignedBigInt::new(int, value), overflow))
     }
 
@@ -279,9 +282,16 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         let n1 = a.num_limbs();
         let n2 = b.num_limbs();
         let num_limbs = n1 + n2 - 1;
+        println!("n1 {}, n2 {}, num_limbs {}", n1, n2, num_limbs);
         let zero_value = gate.load_zero(ctx);
         let a = a.extend_limbs(num_limbs - n1, zero_value.clone());
+        // for limb in a.limbs() {
+        //     limb.value.as_ref().map(|v| println!("a {:?}", v));
+        // }
         let b = b.extend_limbs(num_limbs - n2, zero_value.clone());
+        // for limb in b.limbs() {
+        //     limb.value.as_ref().map(|v| println!("b {:?}", v));
+        // }
         let num_limbs_log2_ceil = (num_limbs as f32).log2().ceil() as usize;
         let int = mul_no_carry::truncate(self.gate(), ctx, &a.int, &b.int, num_limbs_log2_ceil);
         let value = a.value.zip(b.value).map(|(a, b)| a * b);
@@ -514,9 +524,6 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
         num_limbs_l: usize,
         num_limbs_r: usize,
     ) -> Result<AssignedValue<'v, F>, Error> {
-        // let a = self.refresh(ctx, a, num_limbs_l, num_limbs_r)?;
-        // let b = self.refresh(ctx, b, num_limbs_l, num_limbs_r)?;
-        // self.is_equal_fresh(ctx, &a, &b)
         // The following constraints are designed with reference to EqualWhenCarried template in https://github.com/jacksoom/circom-bigint/blob/master/circuits/mult.circom.
         // We use lookup tables to optimize range checks.
         let min_n = if num_limbs_r >= num_limbs_l {
@@ -587,9 +594,6 @@ impl<F: PrimeField> BigIntInstructions<F> for BigIntConfig<F> {
                 QuantumCell::Existing(&cs_acc_eq),
             );
             accumulated_extra = q_acc;
-            // accumulated_extra
-            //     .value
-            //     .map(|v| println!("accumulated_extra {:?}", v));
 
             if i < num_limbs - 1 {
                 // Assert that each carry fits in `carry_bits` bits.
@@ -1431,12 +1435,14 @@ mod test {
                     let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
                     let aux = RefreshAux::new(Self::LIMB_WIDTH, num_limbs, num_limbs);
                     let ab_refreshed = config.refresh(ctx, &ab, &aux)?;
+                    let refreshed_num_limbs = ab_refreshed.num_limbs();
                     let abn = config.mul(ctx, &ab_refreshed, &n_assigned)?;
+                    abn.value.as_ref().map(|v| println!("abn {:?}", v));
                     let nb = config.mul(ctx, &n_assigned, &b_assigned)?;
                     let nb_refreshed = config.refresh(ctx, &nb, &aux)?;
-                    let nba = config.mul(ctx, &nb_refreshed, &a_assigned)?;
-                    // [TODO] Error in the assert_equal_muled.
-                    config.assert_equal_muled(ctx, &abn, &nba, num_limbs, num_limbs)?;
+                    let nba = config.mul(ctx, &a_assigned, &nb_refreshed)?;
+                    nba.value.as_ref().map(|v| println!("nba {:?}", v));
+                    config.assert_equal_muled(ctx, &abn, &nba, refreshed_num_limbs, num_limbs)?;
                     config.range().finalize(ctx);
                     {
                         println!("total advice cells: {}", ctx.total_advice);
@@ -1701,46 +1707,6 @@ mod test {
             Ok(())
         }
     );
-
-    // impl_bigint_test_circuit!(
-    //     TestMulModEqualCircuit,
-    //     test_module_mul_equal_circuit,
-    //     64,
-    //     2048,
-    //     false,
-    //     fn synthesize(
-    //         &self,
-    //         config: Self::Config,
-    //         mut layouter: impl halo2wrong::halo2::circuit::Layouter<F>,
-    //     ) -> Result<(), Error> {
-    //         let bigint_chip = self.bigint_chip(config);
-    //         let num_limbs = Self::BITS_LEN / Self::LIMB_WIDTH;
-    //         layouter.assign_region(
-    //             || "random mul_mod test",
-    //             |region| {
-    //                 let offset = 0;
-    //                 let ctx = &mut RegionCtx::new(region, offset);
-    //                 let a_limbs = decompose_big::<F>(self.a.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let a_unassigned = UnassignedInteger::from(a_limbs);
-    //                 let b_limbs = decompose_big::<F>(self.b.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let b_unassigned = UnassignedInteger::from(b_limbs);
-    //                 let n_limbs = decompose_big::<F>(self.n.clone(), num_limbs, Self::LIMB_WIDTH);
-    //                 let n_unassigned = UnassignedInteger::from(n_limbs);
-    //                 let a_assigned = bigint_chip.assign_integer(ctx, a_unassigned)?;
-    //                 let b_assigned = bigint_chip.assign_integer(ctx, b_unassigned)?;
-    //                 let n_assigned = bigint_chip.assign_integer(ctx, n_unassigned)?;
-    //                 let ab = bigint_chip.mul_mod(ctx, &a_assigned, &b_assigned, &n_assigned)?;
-    //                 let ba = bigint_chip.mul_mod(ctx, &b_assigned, &a_assigned, &n_assigned)?;
-    //                 bigint_chip.assert_equal_fresh(ctx, &ab, &ba)?;
-    //                 Ok(())
-    //             },
-    //         )?;
-    //         let range_chip = bigint_chip.range_chip();
-    //         range_chip.load_table(&mut layouter)?;
-    //         //range_chip.load_overflow_tables(&mut layouter)?;
-    //         Ok(())
-    //     }
-    // );
 
     // impl_bigint_test_circuit!(
     //     TestBadMulModEqualCircuit,
@@ -2329,6 +2295,53 @@ mod test {
     //         Ok(())
     //     }
     // );
+
+    impl_bigint_test_circuit!(
+        TestInFieldCircuit,
+        test_in_field_circuit,
+        64,
+        2048,
+        13,
+        false,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            config.range().load_lookup_table(&mut layouter)?;
+            let mut first_pass = SKIP_FIRST_PASS;
+            layouter.assign_region(
+                || "random refresh test",
+                |region| {
+                    if first_pass {
+                        first_pass = false;
+                        return Ok(());
+                    }
+
+                    let mut aux = config.new_context(region);
+                    let ctx = &mut aux;
+                    let a_assigned =
+                        config.assign_integer(ctx, Value::known(self.a.clone()), Self::BITS_LEN)?;
+                    let n_assigned =
+                        config.assign_integer(ctx, Value::known(self.n.clone()), Self::BITS_LEN)?;
+                    config.assert_in_field(ctx, &a_assigned, &n_assigned)?;
+                    let invalid = config.is_in_field(ctx, &n_assigned, &n_assigned)?;
+                    config.gate().assert_is_const(ctx, &invalid, F::zero());
+                    let zero = config.assign_constant(ctx, BigUint::from(0u64))?;
+                    config.assert_in_field(ctx, &zero, &n_assigned)?;
+                    config.range().finalize(ctx);
+                    {
+                        println!("total advice cells: {}", ctx.total_advice);
+                        let const_rows = ctx.total_fixed + 1;
+                        println!("maximum rows used by a fixed column: {const_rows}");
+                        println!("lookup cells used: {}", ctx.cells_to_lookup.len());
+                    }
+                    Ok(())
+                },
+            )?;
+            Ok(())
+        }
+    );
 
     // impl_bigint_test_circuit!(
     //     TestInFieldCircuit,
