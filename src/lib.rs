@@ -8,9 +8,26 @@
 //! The verification function in [`RSAChip`] requires as input a hashed message, whereas the function in [`RSASignatureVerifier`] computes a SHA256 hash of the given message and verifies the given signature for that hash.
 
 pub mod big_uint;
+use std::marker::PhantomData;
+
 use big_uint::*;
 
-//pub mod big_integer;
+use halo2_base::halo2_proofs::{circuit::Region, circuit::Value, plonk::Error};
+use halo2_base::utils::fe_to_bigint;
+use halo2_base::ContextParams;
+use halo2_base::QuantumCell;
+use halo2_base::{
+    gates::{flex_gate::FlexGateConfig, range::RangeConfig, GateInstructions, RangeInstructions},
+    utils::{bigint_to_fe, biguint_to_fe, fe_to_biguint, modulus, PrimeField},
+    AssignedValue, Context,
+};
+use halo2_ecc::bigint::{
+    big_is_equal, big_is_zero, big_less_than, carry_mod, mul_no_carry, negative, select, sub,
+    CRTInteger, FixedCRTInteger, FixedOverflowInteger, OverflowInteger,
+};
+use num_bigint::{BigInt, BigUint, Sign};
+use num_traits::{One, Signed, Zero};
+
 //mod chip;
 //mod instructions;
 //use big_integer::*;
@@ -39,124 +56,128 @@ use big_uint::*;
 // };
 // use num_bigint::BigUint;
 
-// /// A parameter `e` in the RSA public key that is about to be assigned.
-// #[derive(Clone, Debug)]
-// pub enum RSAPubE<F: FieldExt> {
-//     /// A variable parameter `e`.
-//     Var(UnassignedInteger<F>),
-//     /// A fixed parameter `e`.
-//     Fix(BigUint),
-// }
+/// A parameter `e` in the RSA public key that is about to be assigned.
+#[derive(Clone, Debug)]
+pub enum RSAPubE {
+    /// A variable parameter `e`.
+    Var(Value<BigUint>),
+    /// A fixed parameter `e`.
+    Fix(BigUint),
+}
 
-// /// A parameter `e` in the assigned RSA public key.
-// #[derive(Clone, Debug)]
-// pub enum AssignedRSAPubE<F: FieldExt> {
-//     /// A variable parameter `e`.
-//     Var(AssignedInteger<F, Fresh>),
-//     /// A fixed parameter `e`.
-//     Fix(BigUint),
-// }
+/// A parameter `e` in the assigned RSA public key.
+#[derive(Clone, Debug)]
+pub enum AssignedRSAPubE<'v, F: PrimeField> {
+    /// A variable parameter `e`.
+    Var(AssignedBigUint<'v, F, Fresh>),
+    /// A fixed parameter `e`.
+    Fix(BigUint),
+}
 
-// /// RSA public key that is about to be assigned.
-// #[derive(Clone, Debug)]
-// pub struct RSAPublicKey<F: FieldExt> {
-//     /// a modulus parameter
-//     pub n: UnassignedInteger<F>,
-//     /// an exponent parameter
-//     pub e: RSAPubE<F>,
-// }
+/// RSA public key that is about to be assigned.
+#[derive(Clone, Debug)]
+pub struct RSAPublicKey<F: PrimeField> {
+    /// a modulus parameter
+    pub n: Value<BigUint>,
+    /// an exponent parameter
+    pub e: RSAPubE,
+    _f: PhantomData<F>,
+}
 
-// impl<F: FieldExt> RSAPublicKey<F> {
-//     /// Creates new [`RSAPublicKey`] from `n` and `e`.
-//     ///
-//     /// # Arguments
-//     /// * n - an integer of `n`.
-//     /// * e - a parameter `e`.
-//     ///
-//     /// # Return values
-//     /// Returns new [`RSAPublicKey`].
-//     pub fn new(n: UnassignedInteger<F>, e: RSAPubE<F>) -> Self {
-//         Self { n, e }
-//     }
+impl<F: PrimeField> RSAPublicKey<F> {
+    /// Creates new [`RSAPublicKey`] from `n` and `e`.
+    ///
+    /// # Arguments
+    /// * n - an integer of `n`.
+    /// * e - a parameter `e`.
+    ///
+    /// # Return values
+    /// Returns new [`RSAPublicKey`].
+    pub fn new(n: Value<BigUint>, e: RSAPubE) -> Self {
+        Self {
+            n,
+            e,
+            _f: PhantomData,
+        }
+    }
 
-//     pub fn without_witness(num_limbs: usize, fix_e: BigUint) -> Self {
-//         let n = UnassignedInteger {
-//             value: Value::unknown(),
-//             num_limbs,
-//         };
-//         let e = RSAPubE::<F>::Fix(fix_e);
-//         Self { n, e }
-//     }
-// }
+    pub fn without_witness(fix_e: BigUint) -> Self {
+        let n = Value::unknown();
+        let e = RSAPubE::Fix(fix_e);
+        Self {
+            n,
+            e,
+            _f: PhantomData,
+        }
+    }
+}
 
-// /// An assigned RSA public key.
-// #[derive(Clone, Debug)]
-// pub struct AssignedRSAPublicKey<F: FieldExt> {
-//     /// a modulus parameter
-//     pub n: AssignedInteger<F, Fresh>,
-//     /// an exponent parameter
-//     pub e: AssignedRSAPubE<F>,
-// }
+/// An assigned RSA public key.
+#[derive(Clone, Debug)]
+pub struct AssignedRSAPublicKey<'v, F: PrimeField> {
+    /// a modulus parameter
+    pub n: AssignedBigUint<'v, F, Fresh>,
+    /// an exponent parameter
+    pub e: AssignedRSAPubE<'v, F>,
+}
 
-// impl<F: FieldExt> AssignedRSAPublicKey<F> {
-//     /// Creates new [`AssignedRSAPublicKey`] from assigned `n` and `e`.
-//     ///
-//     /// # Arguments
-//     /// * n - an assigned integer of `n`.
-//     /// * e - an assigned parameter `e`.
-//     ///
-//     /// # Return values
-//     /// Returns new [`AssignedRSAPublicKey`].
-//     pub fn new(n: AssignedInteger<F, Fresh>, e: AssignedRSAPubE<F>) -> Self {
-//         Self { n, e }
-//     }
-// }
+impl<'v, F: PrimeField> AssignedRSAPublicKey<'v, F> {
+    /// Creates new [`AssignedRSAPublicKey`] from assigned `n` and `e`.
+    ///
+    /// # Arguments
+    /// * n - an assigned integer of `n`.
+    /// * e - an assigned parameter `e`.
+    ///
+    /// # Return values
+    /// Returns new [`AssignedRSAPublicKey`].
+    pub fn new(n: AssignedBigUint<'v, F, Fresh>, e: AssignedRSAPubE<'v, F>) -> Self {
+        Self { n, e }
+    }
+}
 
-// /// RSA signature that is about to be assigned.
-// #[derive(Clone, Debug)]
-// pub struct RSASignature<F: FieldExt> {
-//     c: UnassignedInteger<F>,
-// }
+/// RSA signature that is about to be assigned.
+#[derive(Clone, Debug)]
+pub struct RSASignature<F: PrimeField> {
+    c: Value<BigUint>,
+    _f: PhantomData<F>,
+}
 
-// impl<F: FieldExt> RSASignature<F> {
-//     /// Creates new [`RSASignature`] from its integer.
-//     ///
-//     /// # Arguments
-//     /// * c - an integer of the signature.
-//     ///
-//     /// # Return values
-//     /// Returns new [`RSASignature`].
-//     pub fn new(c: UnassignedInteger<F>) -> Self {
-//         Self { c }
-//     }
+impl<F: PrimeField> RSASignature<F> {
+    /// Creates new [`RSASignature`] from its integer.
+    ///
+    /// # Arguments
+    /// * c - an integer of the signature.
+    ///
+    /// # Return values
+    /// Returns new [`RSASignature`].
+    pub fn new(c: Value<BigUint>) -> Self {
+        Self { c, _f: PhantomData }
+    }
 
-//     pub fn without_witness(num_limbs: usize) -> Self {
-//         let c = UnassignedInteger {
-//             value: Value::unknown(),
-//             num_limbs,
-//         };
-//         Self { c }
-//     }
-// }
+    pub fn without_witness() -> Self {
+        let c = Value::unknown();
+        Self { c, _f: PhantomData }
+    }
+}
 
-// /// An assigned RSA signature.
-// #[derive(Clone, Debug)]
-// pub struct AssignedRSASignature<F: FieldExt> {
-//     c: AssignedInteger<F, Fresh>,
-// }
+/// An assigned RSA signature.
+#[derive(Clone, Debug)]
+pub struct AssignedRSASignature<'v, F: PrimeField> {
+    c: AssignedBigUint<'v, F, Fresh>,
+}
 
-// impl<F: FieldExt> AssignedRSASignature<F> {
-//     /// Creates new [`AssignedRSASignature`] from its assigned integer.
-//     ///
-//     /// # Arguments
-//     /// * c - an assigned integer of the signature.
-//     ///
-//     /// # Return values
-//     /// Returns new [`AssignedRSASignature`].
-//     pub fn new(c: AssignedInteger<F, Fresh>) -> Self {
-//         Self { c }
-//     }
-// }
+impl<'v, F: PrimeField> AssignedRSASignature<'v, F> {
+    /// Creates new [`AssignedRSASignature`] from its assigned integer.
+    ///
+    /// # Arguments
+    /// * c - an assigned integer of the signature.
+    ///
+    /// # Return values
+    /// Returns new [`AssignedRSASignature`].
+    pub fn new(c: AssignedBigUint<'v, F, Fresh>) -> Self {
+        Self { c }
+    }
+}
 
 // /// A circuit implementation to verify pkcs1v15 signatures.
 // #[derive(Clone, Debug)]
