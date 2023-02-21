@@ -12,13 +12,13 @@ use halo2_ecc::bigint::{CRTInteger, OverflowInteger};
 use num_bigint::BigUint;
 
 #[derive(Debug, Clone)]
-pub struct AssignedBigInt<'v, F: PrimeField, T: RangeType> {
+pub struct AssignedBigUint<'v, F: PrimeField, T: RangeType> {
     int: OverflowInteger<'v, F>,
     value: Value<BigUint>,
     _t: PhantomData<T>,
 }
 
-impl<'v, F: PrimeField, T: RangeType> AssignedBigInt<'v, F, T> {
+impl<'v, F: PrimeField, T: RangeType> AssignedBigUint<'v, F, T> {
     pub fn new(int: OverflowInteger<'v, F>, value: Value<BigUint>) -> Self {
         Self {
             int,
@@ -59,15 +59,15 @@ impl<'v, F: PrimeField, T: RangeType> AssignedBigInt<'v, F, T> {
     }
 }
 
-impl<'v, F: PrimeField> AssignedBigInt<'v, F, Fresh> {
-    pub fn to_muled(self) -> AssignedBigInt<'v, F, Muled> {
-        AssignedBigInt::new(self.int, self.value)
+impl<'v, F: PrimeField> AssignedBigUint<'v, F, Fresh> {
+    pub fn to_muled(self) -> AssignedBigUint<'v, F, Muled> {
+        AssignedBigUint::new(self.int, self.value)
     }
 }
 
-impl<'v, F: PrimeField> AssignedBigInt<'v, F, Muled> {
-    pub(crate) fn to_fresh_unsafe(self) -> AssignedBigInt<'v, F, Fresh> {
-        AssignedBigInt::new(self.int, self.value)
+impl<'v, F: PrimeField> AssignedBigUint<'v, F, Muled> {
+    pub(crate) fn to_fresh_unsafe(self) -> AssignedBigUint<'v, F, Fresh> {
+        AssignedBigUint::new(self.int, self.value)
     }
 }
 

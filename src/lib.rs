@@ -7,8 +7,8 @@
 //! In addition to [`RSAChip`], this library also provides a high-level circuit implementation to verify pkcs1v15 signatures, [`RSASignatureVerifier`].  
 //! The verification function in [`RSAChip`] requires as input a hashed message, whereas the function in [`RSASignatureVerifier`] computes a SHA256 hash of the given message and verifies the given signature for that hash.
 
-pub mod big_int;
-use big_int::*;
+pub mod big_uint;
+use big_uint::*;
 
 //pub mod big_integer;
 //mod chip;

@@ -92,47 +92,47 @@ pub(crate) fn big_pow_mod(a: &BigUint, b: &BigUint, n: &BigUint) -> BigUint {
     }
 }
 
-pub(crate) struct CarryModParams<F: PrimeField> {
-    pub limb_bits: usize,
-    pub num_limbs: usize,
+// pub(crate) struct CarryModParams<F: PrimeField> {
+//     pub limb_bits: usize,
+//     pub num_limbs: usize,
 
-    pub num_limbs_bits: usize,
-    pub num_limbs_log2_ceil: usize,
-    pub limb_bases: Vec<F>,
-    pub limb_base_big: BigInt,
-    pub limb_mask: BigUint,
+//     pub num_limbs_bits: usize,
+//     pub num_limbs_log2_ceil: usize,
+//     pub limb_bases: Vec<F>,
+//     pub limb_base_big: BigInt,
+//     pub limb_mask: BigUint,
 
-    pub p: BigInt,
-    pub p_limbs: Vec<F>,
-    pub p_native: F,
-}
+//     pub p: BigInt,
+//     pub p_limbs: Vec<F>,
+//     pub p_native: F,
+// }
 
-impl<F: PrimeField> CarryModParams<F> {
-    pub fn new(limb_bits: usize, num_limbs: usize, p: BigInt) -> Self {
-        // https://github.com/axiom-crypto/halo2-lib/blob/main/halo2-ecc/src/fields/fp.rs#L96
-        let limb_mask = (BigUint::from(1u64) << limb_bits) - 1usize;
-        let p_limbs = decompose_bigint(&p, num_limbs, limb_bits);
-        let native_modulus = BigInt::from_biguint(Sign::Plus, modulus::<F>());
-        let p_native = bigint_to_fe(&(&p % &native_modulus));
+// impl<F: PrimeField> CarryModParams<F> {
+//     pub fn new(limb_bits: usize, num_limbs: usize, p: BigInt) -> Self {
+//         // https://github.com/axiom-crypto/halo2-lib/blob/main/halo2-ecc/src/fields/fp.rs#L96
+//         let limb_mask = (BigUint::from(1u64) << limb_bits) - 1usize;
+//         let p_limbs = decompose_bigint(&p, num_limbs, limb_bits);
+//         let native_modulus = BigInt::from_biguint(Sign::Plus, modulus::<F>());
+//         let p_native = bigint_to_fe(&(&p % &native_modulus));
 
-        let limb_base = biguint_to_fe::<F>(&(BigUint::one() << limb_bits));
-        let mut limb_bases = Vec::with_capacity(num_limbs);
-        limb_bases.push(F::one());
-        while limb_bases.len() != num_limbs {
-            limb_bases.push(limb_base * limb_bases.last().unwrap());
-        }
+//         let limb_base = biguint_to_fe::<F>(&(BigUint::one() << limb_bits));
+//         let mut limb_bases = Vec::with_capacity(num_limbs);
+//         limb_bases.push(F::one());
+//         while limb_bases.len() != num_limbs {
+//             limb_bases.push(limb_base * limb_bases.last().unwrap());
+//         }
 
-        Self {
-            limb_bits,
-            num_limbs,
-            num_limbs_bits: bit_length(num_limbs as u64),
-            num_limbs_log2_ceil: bit_length(num_limbs as u64),
-            limb_bases,
-            limb_base_big: BigInt::one() << limb_bits,
-            limb_mask,
-            p: p.into(),
-            p_limbs,
-            p_native,
-        }
-    }
-}
+//         Self {
+//             limb_bits,
+//             num_limbs,
+//             num_limbs_bits: bit_length(num_limbs as u64),
+//             num_limbs_log2_ceil: bit_length(num_limbs as u64),
+//             limb_bases,
+//             limb_base_big: BigInt::one() << limb_bits,
+//             limb_mask,
+//             p: p.into(),
+//             p_limbs,
+//             p_native,
+//         }
+//     }
+// }
