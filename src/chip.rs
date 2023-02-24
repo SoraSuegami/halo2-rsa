@@ -117,6 +117,7 @@ impl<F: PrimeField> RSAInstructions<F> for RSAConfig<F> {
         hashed_msg: &[AssignedValue<'v, F>],
         signature: &AssignedRSASignature<'v, F>,
     ) -> Result<AssignedValue<'v, F>, Error> {
+        assert_eq!(self.biguint_config.limb_bits(), 64);
         let gate = self.gate();
         let mut is_eq = gate.load_constant(ctx, F::one());
         let powed = self.modpow_public_key(ctx, &signature.c, public_key)?;
@@ -270,12 +271,12 @@ impl<F: PrimeField> RSAConfig<F> {
     }
 
     /// Getter for [`FlexGateConfig`].
-    fn gate(&self) -> &FlexGateConfig<F> {
+    pub fn gate(&self) -> &FlexGateConfig<F> {
         &self.biguint_config.gate()
     }
 
     /// Getter for [`RangeConfig`].
-    fn range(&self) -> &RangeConfig<F> {
+    pub fn range(&self) -> &RangeConfig<F> {
         &self.biguint_config.range()
     }
 }
