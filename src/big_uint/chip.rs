@@ -83,7 +83,7 @@ impl<F: PrimeField> BigUintInstructions<F> for BigUintConfig<F> {
         ctx: &mut Context<'v, F>,
         num_limbs: usize,
     ) -> Result<AssignedBigUint<'v, F, Fresh>, Error> {
-        let value = BigUint::from(1u64) << (self.limb_bits * num_limbs);
+        let value = (BigUint::from(1u64) << (self.limb_bits * num_limbs)) - BigUint::from(1u64);
         self.assign_constant(ctx, value)
     }
 
@@ -1907,12 +1907,9 @@ mod test {
                         config.assign_integer(ctx, Value::known(self.n.clone()), Self::BITS_LEN)?;
                     let e = BigUint::from_u64(65537).unwrap();
                     let powed = config.pow_mod_fixed_exp(ctx, &a_assigned, &e, &n_assigned)?;
-                    // let ans_big =
-                    //     big_pow_mod(&self.a, &BigInt::from_biguint(Sign::Plus, e), &self.n);
-                    // let ans_assigned = config.assign_constant(ctx, ans_big)?;
-                    // let is_eq = config.is_equal_fresh(ctx, &powed, &ans_assigned)?;
-                    // let gate = config.gate();
-                    // gate.assert_is_const(ctx, &is_eq, F::one());
+                    let ans_big = big_pow_mod(&self.a, &e, &self.n);
+                    let ans_assigned = config.assign_constant(ctx, ans_big)?;
+                    config.assert_equal_fresh(ctx, &powed, &ans_assigned)?;
                     config.range().finalize(ctx);
                     {
                         println!("total advice cells: {}", ctx.total_advice);
