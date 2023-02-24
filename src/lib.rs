@@ -10,7 +10,7 @@
 pub mod big_uint;
 use std::marker::PhantomData;
 
-use big_uint::*;
+pub use big_uint::*;
 
 use halo2_base::halo2_proofs::{circuit::Region, circuit::Value, plonk::Error};
 use halo2_base::utils::fe_to_bigint;
@@ -32,11 +32,10 @@ mod chip;
 mod instructions;
 pub use chip::*;
 pub use instructions::*;
-//mod macros;
-//pub use macros::*;
-//pub use zkevm_circuits::sha256_circuit::sha256_bit::{Sha256BitChip, Sha256BitConfig};
+mod macros;
 pub use halo2_dynamic_sha256;
 use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicConfig};
+pub use macros::*;
 
 // #[cfg(target_arch = "wasm32")]
 // mod wasm;

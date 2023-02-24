@@ -1,43 +1,53 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicChip, Sha256DynamicConfig};
-use halo2_rsa::{
-    big_integer::{BigIntConfig, BigIntInstructions, UnassignedInteger},
-    impl_pkcs1v15_basic_circuit, RSAChip, RSAConfig, RSAInstructions, RSAPubE, RSAPublicKey,
-    RSASignature, RSASignatureVerifier,
-};
-use halo2wrong::curves::bn256::{Bn256, Fr, G1Affine};
-use halo2wrong::halo2::dev::MockProver;
-use halo2wrong::{
-    curves::FieldExt,
-    halo2::{
-        circuit::SimpleFloorPlanner,
-        plonk::{
-            create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
-            ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
-        },
-        poly::{
-            commitment::Params,
-            kzg::{
-                commitment::{KZGCommitmentScheme, ParamsKZG},
-                multiopen::{ProverGWC, VerifierGWC},
-                strategy::SingleStrategy,
-            },
-        },
-        transcript::{
-            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-        },
-        SerdeFormat,
+use halo2_base::halo2_proofs::{
+    circuit::{Cell, Layouter, Region, SimpleFloorPlanner, Value},
+    dev::MockProver,
+    halo2curves::bn256::{Bn256, Fr, G1Affine},
+    plonk::Error,
+    plonk::{
+        create_proof, keygen_pk, keygen_vk, Circuit, Column, ConstraintSystem, Instance,
+        ProvingKey, VerifyingKey,
     },
+    poly::{
+        commitment::{Params, ParamsProver},
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::ProverGWC,
+        },
+        Rotation,
+    },
+    transcript::{
+        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+    },
+    SerdeFormat,
 };
-use maingate::{
-    decompose_big, MainGate, MainGateInstructions, RangeChip, RangeInstructions, RegionCtx,
+use halo2_base::utils::fe_to_bigint;
+use halo2_base::ContextParams;
+use halo2_base::QuantumCell;
+use halo2_base::{gates::range::RangeStrategy::Vertical, SKIP_FIRST_PASS};
+use halo2_base::{
+    gates::{flex_gate::FlexGateConfig, range::RangeConfig, GateInstructions, RangeInstructions},
+    utils::{bigint_to_fe, biguint_to_fe, fe_to_biguint, modulus, PrimeField},
+    AssignedValue, Context,
 };
-use num_bigint::BigUint;
+use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicConfig};
+use halo2_ecc::bigint::{
+    big_is_equal, big_is_zero, big_less_than, carry_mod, mul_no_carry, negative, select, sub,
+    CRTInteger, FixedCRTInteger, FixedOverflowInteger, OverflowInteger,
+};
+use halo2_rsa::{
+    impl_pkcs1v15_basic_circuit, AssignedBigUint, AssignedRSAPubE, AssignedRSAPublicKey,
+    AssignedRSASignature, BigUintConfig, BigUintInstructions, Fresh, RSAConfig, RSAInstructions,
+    RSAPubE, RSAPublicKey, RSASignature, RSASignatureVerifier,
+};
+use num_bigint::{BigInt, BigUint, Sign};
+use num_traits::{One, Signed, Zero};
 use rand::rngs::OsRng;
+use std::marker::PhantomData;
+
 use rand::{thread_rng, Rng};
 use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
-use std::marker::PhantomData;
 use std::{
     fs::File,
     io::{prelude::*, BufReader, BufWriter},
@@ -49,9 +59,9 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_64EnabledBenchCircuit,
     setup_pkcs1v15_1024_64_enabled,
     prove_pkcs1v15_1024_64_enabled,
-    15,
     1024,
     64,
+    13,
     true
 );
 
@@ -60,9 +70,9 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_128EnabledBenchCircuit,
     setup_pkcs1v15_1024_128_enabled,
     prove_pkcs1v15_1024_128_enabled,
-    15,
     1024,
     128,
+    13,
     true
 );
 
@@ -71,9 +81,9 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_1024EnabledBenchCircuit,
     setup_pkcs1v15_1024_1024_enabled,
     prove_pkcs1v15_1024_1024_enabled,
-    16,
     1024,
     1024,
+    13,
     true
 );
 
@@ -82,9 +92,9 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_2048_64EnabledBenchCircuit,
     setup_pkcs1v15_2048_64_enabled,
     prove_pkcs1v15_2048_64_enabled,
-    17,
     2048,
     64,
+    13,
     true
 );
 
@@ -93,9 +103,9 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_2048_128EnabledBenchCircuit,
     setup_pkcs1v15_2048_128_enabled,
     prove_pkcs1v15_2048_128_enabled,
-    17,
     2048,
     128,
+    13,
     true
 );
 
@@ -104,22 +114,22 @@ impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_2048_1024EnabledBenchCircuit,
     setup_pkcs1v15_2048_1024_enabled,
     prove_pkcs1v15_2048_1024_enabled,
-    17,
     2048,
     1024,
+    13,
     true
 );
 
-impl_pkcs1v15_basic_circuit!(
-    Pkcs1v15_1024_64DisabledBenchConfig,
-    Pkcs1v15_1024_64DisabledBenchCircuit,
-    setup_pkcs1v15_1024_64_disabled,
-    prove_pkcs1v15_1024_64_disabled,
-    15,
-    1024,
-    64,
-    false
-);
+// impl_pkcs1v15_basic_circuit!(
+//     Pkcs1v15_1024_64DisabledBenchConfig,
+//     Pkcs1v15_1024_64DisabledBenchCircuit,
+//     setup_pkcs1v15_1024_64_disabled,
+//     prove_pkcs1v15_1024_64_disabled,
+//     15,
+//     1024,
+//     64,
+//     false
+// );
 
 fn save_params_pk_and_vk(
     params_filename: &str,
@@ -229,20 +239,20 @@ fn bench_pkcs1v15_2048_enabled(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_pkcs1v15_1024_disabled(c: &mut Criterion) {
-    let (params, vk, pk) = setup_pkcs1v15_1024_64_disabled();
-    let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 disabled");
-    group.sample_size(10);
-    group.bench_function("message 64 bytes", |b| {
-        b.iter(|| prove_pkcs1v15_1024_64_disabled(&params, &vk, &pk))
-    });
-    group.finish();
-}
+// fn bench_pkcs1v15_1024_disabled(c: &mut Criterion) {
+//     let (params, vk, pk) = setup_pkcs1v15_1024_64_disabled();
+//     let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 disabled");
+//     group.sample_size(10);
+//     group.bench_function("message 64 bytes", |b| {
+//         b.iter(|| prove_pkcs1v15_1024_64_disabled(&params, &vk, &pk))
+//     });
+//     group.finish();
+// }
 
 criterion_group!(
     benches,
-    bench_pkcs1v15_1024_enabled,
-    //bench_pkcs1v15_2048_enabled,
+    //bench_pkcs1v15_1024_enabled,
+    bench_pkcs1v15_2048_enabled,
     //bench_pkcs1v15_1024_disabled
 );
 criterion_main!(benches);
