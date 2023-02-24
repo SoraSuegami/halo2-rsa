@@ -35,8 +35,8 @@ impl<'v, F: PrimeField, T: RangeType> AssignedBigUint<'v, F, T> {
         self.int.limbs.len()
     }
 
-    pub fn limbs(&self) -> Vec<AssignedValue<'v, F>> {
-        self.int.limbs.clone()
+    pub fn limbs(&self) -> &[AssignedValue<'v, F>] {
+        &self.int.limbs
     }
 
     pub fn value(&self) -> Value<BigUint> {

@@ -19,12 +19,27 @@ use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{One, Signed, Zero};
 
 #[derive(Clone, Debug)]
-pub struct BigIntConfig<F: PrimeField> {
+pub struct BigUintConfig<F: PrimeField> {
     pub range: RangeConfig<F>,
     pub limb_bits: usize,
 }
 
-impl<F: PrimeField> BigUintInstructions<F> for BigIntConfig<F> {
+impl<F: PrimeField> BigUintInstructions<F> for BigUintConfig<F> {
+    /// Getter for [`FlexGateConfig`].
+    fn gate(&self) -> &FlexGateConfig<F> {
+        &self.range.gate
+    }
+
+    /// Getter for [`RangeConfig`].
+    fn range(&self) -> &RangeConfig<F> {
+        &self.range
+    }
+
+    /// Return limb bits.
+    fn limb_bits(&self) -> usize {
+        self.limb_bits
+    }
+
     fn assign_integer<'v>(
         &self,
         ctx: &mut Context<'v, F>,
@@ -182,8 +197,8 @@ impl<F: PrimeField> BigUintInstructions<F> for BigIntConfig<F> {
         for i in 0..max_n {
             let a_b = gate.add(
                 ctx,
-                QuantumCell::Existing(a.limb(i)),
-                QuantumCell::Existing(b.limb(i)),
+                QuantumCell::Existing(&a.limb(i)),
+                QuantumCell::Existing(&b.limb(i)),
             );
             let sum = gate.add(
                 ctx,
@@ -702,7 +717,7 @@ impl<F: PrimeField> BigUintInstructions<F> for BigIntConfig<F> {
     }
 }
 
-impl<F: PrimeField> BigIntConfig<F> {
+impl<F: PrimeField> BigUintConfig<F> {
     /// Construct a new [`BigIntChip`] from the configuration and parameters.
     ///
     /// # Arguments
@@ -711,16 +726,6 @@ impl<F: PrimeField> BigIntConfig<F> {
     /// Returns a new [`BigIntChip`]
     pub fn construct(range: RangeConfig<F>, limb_bits: usize) -> Self {
         Self { range, limb_bits }
-    }
-
-    /// Getter for [`RangeConfig`].
-    pub fn range(&self) -> &RangeConfig<F> {
-        &self.range
-    }
-
-    /// Getter for [`FlexGateConfig`].
-    pub fn gate(&self) -> &FlexGateConfig<F> {
-        &self.range.gate
     }
 
     pub fn new_context<'a, 'b>(&'b self, region: Region<'a, F>) -> Context<'a, F> {
@@ -862,7 +867,7 @@ mod test {
             }
 
             impl<F: PrimeField> Circuit<F> for $circuit_name<F> {
-                type Config = BigIntConfig<F>;
+                type Config = BigUintConfig<F>;
                 type FloorPlanner = SimpleFloorPlanner;
 
                 fn without_witnesses(&self) -> Self {
@@ -871,7 +876,7 @@ mod test {
 
                 fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                     let range_config = RangeConfig::configure(meta,Vertical, &[Self::NUM_ADVICE], &[Self::NUM_LOOKUP_ADVICE], Self::NUM_FIXED, Self::LOOKUP_BITS, 0, $k);
-                    let bigint_config = BigIntConfig::construct(range_config, Self::LIMB_WIDTH);
+                    let bigint_config = BigUintConfig::construct(range_config, Self::LIMB_WIDTH);
                     bigint_config
                 }
 

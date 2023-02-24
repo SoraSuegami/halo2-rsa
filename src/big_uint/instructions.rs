@@ -1,6 +1,7 @@
 use crate::{AssignedBigUint, Fresh, Muled, RangeType, RefreshAux};
 use halo2_base::halo2_proofs::circuit::Value;
 // use halo2wrong::halo2::{arithmetic::FieldExt, plonk::Error};
+use halo2_base::gates::{flex_gate::FlexGateConfig, range::RangeConfig};
 use halo2_base::halo2_proofs::plonk::Error;
 use halo2_base::{utils::PrimeField, AssignedValue, Context};
 // use maingate::{AssignedValue, RegionCtx};
@@ -8,6 +9,14 @@ use num_bigint::BigUint;
 
 /// Instructions for big-integer operations.
 pub trait BigUintInstructions<F: PrimeField> {
+    /// Return [`FlexGateConfig`]
+    fn gate(&self) -> &FlexGateConfig<F>;
+    /// Return [`RangeConfig`]
+    fn range(&self) -> &RangeConfig<F>;
+
+    /// Return limb bits.
+    fn limb_bits(&self) -> usize;
+
     /// Assigns a variable [`AssignedBigUint`] whose [`RangeType`] is [`Fresh`].
     fn assign_integer<'v>(
         &self,

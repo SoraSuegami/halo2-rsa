@@ -28,16 +28,16 @@ use halo2_ecc::bigint::{
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{One, Signed, Zero};
 
-//mod chip;
-//mod instructions;
+mod chip;
+mod instructions;
 //use big_integer::*;
-//pub use chip::*;
+pub use chip::*;
 // use halo2wrong::halo2::{
 //     arithmetic::FieldExt,
 //     circuit::{Region, Value},
 //     plonk::Error,
 // };
-//pub use instructions::*;
+pub use instructions::*;
 //mod macros;
 // use halo2wrong::halo2::circuit::Layouter;
 //pub use macros::*;
@@ -69,7 +69,7 @@ pub enum RSAPubE {
 #[derive(Clone, Debug)]
 pub enum AssignedRSAPubE<'v, F: PrimeField> {
     /// A variable parameter `e`.
-    Var(AssignedBigUint<'v, F, Fresh>),
+    Var(AssignedValue<'v, F>),
     /// A fixed parameter `e`.
     Fix(BigUint),
 }
