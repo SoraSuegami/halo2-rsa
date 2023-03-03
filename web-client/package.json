@@ -31,7 +31,7 @@
     "eslint-webpack-plugin": "^3.1.1",
     "file-loader": "^6.2.0",
     "fs-extra": "^10.0.0",
-    "halo2-rsa": "file:public/pkg",
+    "halo2-rsa": "./public/pkg",
     "html-webpack-plugin": "^5.5.0",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^27.4.3",
@@ -39,6 +39,7 @@
     "jest-watch-typeahead": "^1.0.0",
     "jsencrypt": "^3.3.1",
     "mini-css-extract-plugin": "^2.4.5",
+    "plotly.js-dist": "^2.18.2",
     "postcss": "^8.4.4",
     "postcss-flexbugs-fixes": "^5.0.2",
     "postcss-loader": "^6.2.1",
@@ -54,6 +55,7 @@
     "resolve-url-loader": "^4.0.0",
     "sass-loader": "^12.3.0",
     "semver": "^7.3.5",
+    "simple-statistics": "^7.8.3",
     "source-map-loader": "^3.0.0",
     "style-loader": "^3.3.1",
     "tailwindcss": "^3.0.2",
@@ -69,7 +71,7 @@
     "start": "node scripts/start.js",
     "build": "node scripts/build.js",
     "test": "node scripts/test.js",
-    "build:wasm": "cd ../ && wasm-pack build --release --target web --out-dir ./web-client/public/pkg"
+    "build:wasm": "cd ../ && wasm-pack build --release --target web --out-dir ./web-client/public/pkg ./ -Zbuild-std=panic_abort,std && cd ./web-client && yarn upgrade halo2-rsa"
   },
   "eslintConfig": {
     "extends": [

@@ -155,6 +155,36 @@ async function verify_2048_64(
   return ret;
 }
 
+async function prove_2048_1024(
+  pk: any,
+  public_key: any,
+  msg: any,
+  signature: any
+): Promise<any> {
+  const params = await fetch_params();
+  const multiThread = await import(
+    'halo2-rsa'
+  );
+  await multiThread.default();
+  await multiThread.initThreadPool(navigator.hardwareConcurrency);
+  const ret = multiThread.prove_pkcs1v15_2048_1024_circuit(params, pk, public_key, msg, signature);
+  return ret;
+}
+
+async function verify_2048_1024(
+  vk: any,
+  proof: any
+): Promise<boolean> {
+  const params = await fetch_params();
+  const multiThread = await import(
+    'halo2-rsa'
+  );
+  await multiThread.default();
+  await multiThread.initThreadPool(navigator.hardwareConcurrency);
+  const ret = multiThread.verify_pkcs1v15_2048_1024_circuit(params, vk, proof);
+  return ret;
+}
+
 
 const exports = {
   fetch_params,
@@ -170,6 +200,8 @@ const exports = {
   verify_1024_1024,
   prove_2048_64,
   verify_2048_64,
+  prove_2048_1024,
+  verify_2048_1024
 };
 export type RSAWorker = typeof exports;
 

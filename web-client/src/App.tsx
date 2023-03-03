@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import logo from './logo.svg';
 import './App.css';
 import { wrap } from 'comlink';
+import { mean, sampleVariance } from 'simple-statistics'
+const Plotly = require('plotly.js-dist');
 
 function App() {
   const worker = new Worker(new URL('./rsa-worker', import.meta.url), {
@@ -20,16 +22,30 @@ function App() {
       let msg = new Uint8Array([0]);
       const publicKey = await workerApi.to_public_key(privateKey);
       const signature = await workerApi.sign(privateKey, msg);
-      const start = performance.now();
-      // const proof = await workerApi.prove_1024_64(pk, publicKey, msg, signature);
-      // const proof = await workerApi.prove_1024_1024(pk, publicKey, msg, signature);
-      const proof = await workerApi.prove_2048_64(pk, publicKey, msg, signature);
-      console.log('proof generation', performance.now() - start);
-      // let isValid = await workerApi.verify_1024_64(vk, proof);
-      // let isValid = await workerApi.verify_1024_1024(vk, proof);
-      let isValid = await workerApi.verify_2048_64(vk, proof);
-      console.log(isValid)
-      console.log("benchmark end");
+      const times = 20;
+      const indexes = [];
+      const benches = [];
+      // let sumTime = 0;
+      for (let i = 0; i < times; i++) {
+        indexes.push(i);
+        const start = performance.now();
+        const proof = await workerApi.prove_2048_1024(pk, publicKey, msg, signature);
+        const sub = performance.now() - start;
+        console.log(`index: ${i}, bench: ${sub} ms`);
+        benches.push(sub);
+        // sumTime += sub;
+        const isValid = await workerApi.verify_2048_1024(vk, proof);
+        console.log(isValid)
+      }
+      const graph = document.getElementById('graph');
+      Plotly.newPlot(graph, [{
+        x: indexes,
+        y: benches,
+      }], {
+        margin: { t: 0 }
+      });
+      console.log(`proving time average: ${mean(benches)} ms.`);
+      console.log(`proving time variance: ${sampleVariance(benches)} ms.`);
     } catch (e) {
       console.log(e)
     }
@@ -52,14 +68,7 @@ function App() {
         </p>
         {ans}
         <button onClick={test}>test</button>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
+        <div id="graph"></div>
       </header>
     </div>
   );

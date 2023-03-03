@@ -251,7 +251,7 @@ fn bench_pkcs1v15_2048_enabled(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    //bench_pkcs1v15_1024_enabled,
+    bench_pkcs1v15_1024_enabled,
     bench_pkcs1v15_2048_enabled,
     //bench_pkcs1v15_1024_disabled
 );

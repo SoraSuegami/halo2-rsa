@@ -37,10 +37,10 @@ pub use halo2_dynamic_sha256;
 use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicConfig};
 pub use macros::*;
 
-// #[cfg(target_arch = "wasm32")]
-// mod wasm;
-// #[cfg(target_arch = "wasm32")]
-// pub use wasm::*;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;
 
 /// A parameter `e` in the RSA public key that is about to be assigned.
 #[derive(Clone, Debug)]
