@@ -44,14 +44,23 @@ impl<'v, F: PrimeField, T: RangeType> AssignedBigUint<'v, F, T> {
     }
 
     pub fn extend_limbs(&self, num_extend_limbs: usize, zero_value: AssignedValue<'v, F>) -> Self {
+        let max_limb_bits = self.int_ref().max_limb_bits;
         let pre_num_limbs = self.num_limbs();
         let mut limbs = self.int.limbs.clone();
         for _ in 0..num_extend_limbs {
             limbs.push(zero_value.clone());
         }
         assert_eq!(pre_num_limbs + num_extend_limbs, limbs.len());
-        let int = OverflowInteger::construct(limbs, pre_num_limbs + num_extend_limbs);
+        let int = OverflowInteger::construct(limbs, max_limb_bits);
         Self::new(int, self.value())
+    }
+
+    pub fn slice_limbs(&self, min: usize, max: usize) -> Self {
+        let max_limb_bits = self.int_ref().max_limb_bits;
+        let value = self.value();
+        let limbs = &self.int.limbs;
+        let int = OverflowInteger::construct(limbs[min..=max].to_vec(), max_limb_bits);
+        Self::new(int, value)
     }
 
     pub fn int_ref(&'v self) -> &'v OverflowInteger<'v, F> {

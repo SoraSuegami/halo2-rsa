@@ -80,7 +80,7 @@ impl<F: PrimeField> RSAInstructions<F> for RSAConfig<F> {
     /// * `public_key` - an assigned RSA public key.
     ///
     /// # Return values
-    /// Returns the modular power result `x^e mod n` as [`AssignedInteger<F, Fresh>`].
+    /// Returns the modular power result `x^e mod n` as [`AssignedBigUint<F, Fresh>`].
     fn modpow_public_key<'v>(
         &self,
         ctx: &mut Context<'v, F>,
@@ -107,7 +107,7 @@ impl<F: PrimeField> RSAInstructions<F> for RSAConfig<F> {
     /// * `signature` - an assigned pkcs1v15 signature.
     ///
     /// # Return values
-    /// Returns the assigned bit as `AssignedValue<F>`.
+    /// Returns the assigned bit as [`AssignedValue<F>`].
     /// If `signature` is valid for `public_key` and `hashed_msg`, the bit is equivalent to one.
     /// Otherwise, the bit is equivalent to zero.
     fn verify_pkcs1v15_signature<'v>(
@@ -261,6 +261,7 @@ impl<F: PrimeField> RSAConfig<F> {
         }
     }
 
+    /// Return [`Context<F>`]
     pub fn new_context<'a, 'b>(&'b self, region: Region<'a, F>) -> Context<'a, F> {
         self.biguint_config.new_context(region)
     }
@@ -383,8 +384,6 @@ mod test {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             let biguint_config = config.biguint_config();
-            let limb_bits = Self::LIMB_BITS;
-            let num_limbs = Self::BITS_LEN / Self::LIMB_BITS;
 
             config.range().load_lookup_table(&mut layouter)?;
             let mut first_pass = SKIP_FIRST_PASS;
@@ -445,8 +444,6 @@ mod test {
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
             let biguint_config = config.biguint_config();
-            let limb_bits = Self::LIMB_BITS;
-            let num_limbs = Self::BITS_LEN / Self::LIMB_BITS;
 
             config.range().load_lookup_table(&mut layouter)?;
             let mut first_pass = SKIP_FIRST_PASS;
@@ -679,10 +676,6 @@ mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let biguint_config = config.biguint_config();
-            let limb_bits = Self::LIMB_BITS;
-            let num_limbs = Self::BITS_LEN / Self::LIMB_BITS;
-
             config.range().load_lookup_table(&mut layouter)?;
             let mut first_pass = SKIP_FIRST_PASS;
             layouter.assign_region(
@@ -733,10 +726,6 @@ mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let biguint_config = config.biguint_config();
-            let limb_bits = Self::LIMB_BITS;
-            let num_limbs = Self::BITS_LEN / Self::LIMB_BITS;
-
             config.range().load_lookup_table(&mut layouter)?;
             let mut first_pass = SKIP_FIRST_PASS;
             layouter.assign_region(
@@ -787,10 +776,6 @@ mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let biguint_config = config.biguint_config();
-            let limb_bits = Self::LIMB_BITS;
-            let num_limbs = Self::BITS_LEN / Self::LIMB_BITS;
-
             config.range().load_lookup_table(&mut layouter)?;
             let mut first_pass = SKIP_FIRST_PASS;
             layouter.assign_region(
@@ -841,10 +826,6 @@ mod test {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let biguint_config = config.biguint_config();
-            let limb_bits = Self::LIMB_BITS;
-            let num_limbs = Self::BITS_LEN / Self::LIMB_BITS;
-
             config.range().load_lookup_table(&mut layouter)?;
             let mut first_pass = SKIP_FIRST_PASS;
             layouter.assign_region(
