@@ -123,6 +123,17 @@ impl_pkcs1v15_basic_circuit!(
     true
 );
 
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_DisabledBenchConfig,
+    Pkcs1v15_2048_DisabledBenchCircuit,
+    setup_pkcs1v15_2048_disabled,
+    prove_pkcs1v15_2048_disabled,
+    2048,
+    1024,
+    13,
+    false
+);
+
 #[wasm_bindgen]
 pub fn sample_rsa_private_key(bits_len: usize) -> JsValue {
     let mut rng = thread_rng();
@@ -324,6 +335,13 @@ impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_2048_1024EnabledBenchCircuit,
     prove_pkcs1v15_2048_1024_circuit,
     verify_pkcs1v15_2048_1024_circuit,
+    13
+);
+
+impl_pkcs1v15_wasm_functions!(
+    Pkcs1v15_2048_1024DisabledBenchCircuit,
+    prove_pkcs1v15_no_sha2_2048_1024_circuit,
+    verify_pkcs1v15_no_sha2_2048_1024_circuit,
     13
 );
 

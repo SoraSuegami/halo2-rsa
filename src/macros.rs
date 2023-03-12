@@ -39,7 +39,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
         #[derive(Debug, Clone)]
         struct $config_name<F: Field> {
             rsa_config: RSAConfig<F>,
-            sha256_config: Sha256DynamicConfig<F>,
+            sha256_config: Option<Sha256DynamicConfig<F>>,
         }
 
         struct $circuit_name<F: Field> {
@@ -102,12 +102,17 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 let bigint_config = BigUintConfig::construct(range_config.clone(), 64);
                 let rsa_config =
                     RSAConfig::construct(bigint_config, Self::BITS_LEN, Self::EXP_LIMB_BITS);
-                let sha256_bit_config = Sha256BitConfig::configure(meta);
-                let sha256_config = Sha256DynamicConfig::construct(
-                    sha256_bit_config,
-                    Self::MSG_LEN + 64,
-                    range_config,
-                );
+                let sha256_config = if $sha2_chip_enabled {
+                    let sha256_bit_config = Sha256BitConfig::configure(meta);
+                    Some(Sha256DynamicConfig::construct(
+                        sha256_bit_config,
+                        Self::MSG_LEN + 64,
+                        range_config,
+                    ))
+                } else {
+                    None
+                };
+
                 Self::Config {
                     rsa_config,
                     sha256_config,
@@ -157,19 +162,43 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                         let public_key = config
                             .rsa_config
                             .assign_public_key(ctx, self.public_key.clone())?;
-                        let verifier = RSASignatureVerifier::new(
-                            config.rsa_config.clone(),
-                            config.sha256_config.clone(),
-                        );
-                        let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
-                            ctx,
-                            &public_key,
-                            &self.msg,
-                            &sign,
-                        )?;
-                        biguint_config
-                            .gate()
-                            .assert_is_const(ctx, &is_valid, F::one());
+                        if $sha2_chip_enabled {
+                            let verifier = RSASignatureVerifier::new(
+                                config.rsa_config.clone(),
+                                config.sha256_config.clone().unwrap(),
+                            );
+                            let (is_valid, hashed_msg) = verifier.verify_pkcs1v15_signature(
+                                ctx,
+                                &public_key,
+                                &self.msg,
+                                &sign,
+                            )?;
+                            biguint_config
+                                .gate()
+                                .assert_is_const(ctx, &is_valid, F::one());
+                        } else {
+                            let gate = config.rsa_config.gate();
+                            let hash_u64s = self.msg.chunks(limb_bits).map(|limbs| {
+                                let mut sum = 0u64;
+                                for (i, limb) in limbs.into_iter().enumerate() {
+                                    sum += (*limb as u64) * (8u64 * i as u64);
+                                }
+                                F::from(sum)
+                            });
+                            let assigned_msg = hash_u64s
+                                .map(|v| gate.load_witness(ctx, Value::known(v)))
+                                .collect::<Vec<AssignedValue<F>>>();
+                            let is_valid = config.rsa_config.verify_pkcs1v15_signature(
+                                ctx,
+                                &public_key,
+                                &assigned_msg,
+                                &sign,
+                            )?;
+                            config
+                                .rsa_config
+                                .gate()
+                                .assert_is_const(ctx, &is_valid, F::one());
+                        }
                         biguint_config.range().finalize(ctx);
                         {
                             println!("total advice cells: {}", ctx.total_advice);
@@ -177,16 +206,6 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                             println!("maximum rows used by a fixed column: {const_rows}");
                             println!("lookup cells used: {}", ctx.cells_to_lookup.len());
                         }
-                        let public_key_cells = public_key
-                            .n
-                            .limbs()
-                            .into_iter()
-                            .map(|v| v.cell())
-                            .collect::<Vec<Cell>>();
-                        let hashed_msg_cells = hashed_msg
-                            .into_iter()
-                            .map(|v| v.cell())
-                            .collect::<Vec<Cell>>();
                         Ok(())
                     },
                 )?;
