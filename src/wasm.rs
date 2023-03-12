@@ -124,10 +124,10 @@ impl_pkcs1v15_basic_circuit!(
 );
 
 impl_pkcs1v15_basic_circuit!(
-    Pkcs1v15_2048_DisabledBenchConfig,
-    Pkcs1v15_2048_DisabledBenchCircuit,
-    setup_pkcs1v15_2048_disabled,
-    prove_pkcs1v15_2048_disabled,
+    Pkcs1v15_2048_1024DisabledBenchConfig,
+    Pkcs1v15_2048_1024DisabledBenchCircuit,
+    setup_pkcs1v15_2048_1024_disabled,
+    prove_pkcs1v15_2048_1024_disabled,
     2048,
     1024,
     13,
@@ -174,7 +174,7 @@ pub fn sha256_msg(msg: JsValue) -> JsValue {
 
 #[macro_export]
 macro_rules! impl_pkcs1v15_wasm_functions {
-    ($circuit_name:ident, $prove_fn_name:ident, $verify_fn_name:ident, $k:expr) => {
+    ($circuit_name:ident, $prove_fn_name:ident, $verify_fn_name:ident, $msg_len:expr, $k:expr, $sha2_chip_enabled:expr) => {
         #[wasm_bindgen]
         pub fn $prove_fn_name(
             params: JsValue,
@@ -203,40 +203,16 @@ macro_rules! impl_pkcs1v15_wasm_functions {
             const bits_len: usize = $circuit_name::<Fr>::BITS_LEN;
             const msg_len: usize = $circuit_name::<Fr>::MSG_LEN;
             let num_limbs = bits_len / 64;
-            // 1. Uniformly sample a RSA key pair.
-            let mut rng = thread_rng();
-            let private_key =
-                RsaPrivateKey::new(&mut rng, bits_len).expect("failed to generate a key");
-            let public_key = RsaPublicKey::from(&private_key);
-            // 2. Uniformly sample a message.
-            // 3. Compute the SHA256 hash of `msg`.
-            let (msg, hashed_msg) = {
-                let mut msg: [u8; msg_len] = [0; msg_len];
-                for i in 0..msg_len {
-                    msg[i] = rng.gen();
-                }
-                let hashed_msg = Sha256::digest(&msg).to_vec();
-                (msg.to_vec(), hashed_msg)
-            };
 
-            // 4. Generate a pkcs1v15 signature.
-            let padding = PaddingScheme::PKCS1v15Sign {
-                hash: Some(Hash::SHA2_256),
-            };
-            let mut sign = private_key
-                .sign(padding, &hashed_msg)
-                .expect("fail to sign a hashed message.");
-            sign.reverse();
-            let sign_big = BigUint::from_bytes_le(&sign);
+            signature.reverse();
+            let sign_big = BigUint::from_bytes_le(&signature);
             let signature = RSASignature::new(Value::known(sign_big));
 
-            // 5. Construct `RSAPublicKey` from `n` of `public_key` and fixed `e`.
             let n_big =
                 BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
             let e_fix = RSAPubE::Fix(BigUint::from($circuit_name::<Fr>::DEFAULT_E));
             let public_key = RSAPublicKey::new(Value::known(n_big), e_fix);
 
-            // 6. Create our circuit!
             let circuit = $circuit_name::<Fr> {
                 signature,
                 public_key,
@@ -250,7 +226,6 @@ macro_rules! impl_pkcs1v15_wasm_functions {
             };
             prover.verify().unwrap();
 
-            // 7. Generate a proof.
             let proof = {
                 let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
                 create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
@@ -300,406 +275,61 @@ impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_1024_64EnabledBenchCircuit,
     prove_pkcs1v15_1024_64_circuit,
     verify_pkcs1v15_1024_64_circuit,
-    13
+    64,
+    13,
+    true
 );
 
 impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_1024_128EnabledBenchCircuit,
     prove_pkcs1v15_1024_128_circuit,
     verify_pkcs1v15_1024_128_circuit,
-    13
+    128,
+    13,
+    true
 );
 
 impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_1024_1024EnabledBenchCircuit,
     prove_pkcs1v15_1024_1024_circuit,
     verify_pkcs1v15_1024_1024_circuit,
-    13
+    1024,
+    13,
+    true
 );
 
 impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_2048_64EnabledBenchCircuit,
     prove_pkcs1v15_2048_64_circuit,
     verify_pkcs1v15_2048_64_circuit,
-    13
+    64,
+    13,
+    true
 );
 
 impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_2048_128EnabledBenchCircuit,
     prove_pkcs1v15_2048_128_circuit,
     verify_pkcs1v15_2048_128_circuit,
-    13
+    128,
+    13,
+    true
 );
 
 impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_2048_1024EnabledBenchCircuit,
     prove_pkcs1v15_2048_1024_circuit,
     verify_pkcs1v15_2048_1024_circuit,
-    13
+    1024,
+    13,
+    true
 );
 
 impl_pkcs1v15_wasm_functions!(
     Pkcs1v15_2048_1024DisabledBenchCircuit,
     prove_pkcs1v15_no_sha2_2048_1024_circuit,
     verify_pkcs1v15_no_sha2_2048_1024_circuit,
-    13
+    1024,
+    13,
+    false
 );
-
-// #[wasm_bindgen]
-// pub fn verify_pkcs1v15_1024_64_circuit(params: JsValue, vk: JsValue, proof: JsValue) -> bool {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-//     let vk: Vec<u8> = Uint8Array::new(&vk).to_vec();
-//     let vk = VerifyingKey::<G1Affine>::read::<_, Pkcs1v15_1024_64EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&vk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let strategy = SingleStrategy::new(&params);
-//     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
-//     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-//     verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[]], &mut transcript)
-//         .expect("proof invalid");
-//     true
-// }
-// #[wasm_bindgen]
-// pub fn prove_pkcs1v15_1024_1024_circuit(
-//     params: JsValue,
-//     pk: JsValue,
-//     public_key: JsValue,
-//     msg: JsValue,
-//     signature: JsValue,
-// ) -> JsValue {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-
-//     let pk: Vec<u8> = Uint8Array::new(&pk).to_vec();
-//     let pk = ProvingKey::<G1Affine>::read::<_, Pkcs1v15_1024_1024EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&pk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
-//     let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
-//     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
-
-//     let limb_bits = 64;
-//     const bits_len: usize = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::BITS_LEN;
-//     const msg_len: usize = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::MSG_LEN;
-//     let num_limbs = bits_len / 64;
-//     // 1. Uniformly sample a RSA key pair.
-//     let mut rng = thread_rng();
-//     let private_key = RsaPrivateKey::new(&mut rng, bits_len).expect("failed to generate a key");
-//     let public_key = RsaPublicKey::from(&private_key);
-//     // 2. Uniformly sample a message.
-//     // 3. Compute the SHA256 hash of `msg`.
-//     let (msg, hashed_msg) = {
-//         let mut msg: [u8; msg_len] = [0; msg_len];
-//         for i in 0..msg_len {
-//             msg[i] = rng.gen();
-//         }
-//         let hashed_msg = Sha256::digest(&msg).to_vec();
-//         (msg.to_vec(), hashed_msg)
-//     };
-
-//     // 4. Generate a pkcs1v15 signature.
-//     let padding = PaddingScheme::PKCS1v15Sign {
-//         hash: Some(Hash::SHA2_256),
-//     };
-//     let mut sign = private_key
-//         .sign(padding, &hashed_msg)
-//         .expect("fail to sign a hashed message.");
-//     sign.reverse();
-//     let sign_big = BigUint::from_bytes_le(&sign);
-//     let signature = RSASignature::new(Value::known(sign_big));
-
-//     // 5. Construct `RSAPublicKey` from `n` of `public_key` and fixed `e`.
-//     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
-//     let e_fix = RSAPubE::Fix(BigUint::from(
-//         Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr>::DEFAULT_E,
-//     ));
-//     let public_key = RSAPublicKey::new(Value::known(n_big), e_fix);
-
-//     // 6. Create our circuit!
-//     let circuit = Pkcs1v15_1024_1024EnabledBenchCircuit::<Fr> {
-//         signature,
-//         public_key,
-//         msg,
-//         _f: PhantomData,
-//     };
-
-//     let prover = match MockProver::run(13, &circuit, vec![]) {
-//         Ok(prover) => prover,
-//         Err(e) => panic!("{:#?}", e),
-//     };
-//     prover.verify().unwrap();
-
-//     // 7. Generate a proof.
-//     let proof = {
-//         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-//         create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
-//             &params,
-//             &pk,
-//             &[circuit],
-//             &[&[]],
-//             OsRng,
-//             &mut transcript,
-//         )
-//         .unwrap();
-//         transcript.finalize()
-//     };
-//     serde_wasm_bindgen::to_value(&proof).unwrap()
-// }
-
-// #[wasm_bindgen]
-// pub fn verify_pkcs1v15_1024_1024_circuit(params: JsValue, vk: JsValue, proof: JsValue) -> bool {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-//     let vk: Vec<u8> = Uint8Array::new(&vk).to_vec();
-//     let vk = VerifyingKey::<G1Affine>::read::<_, Pkcs1v15_1024_1024EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&vk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let strategy = SingleStrategy::new(&params);
-//     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
-//     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-//     verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[]], &mut transcript)
-//         .expect("proof invalid");
-//     true
-// }
-
-// #[wasm_bindgen]
-// pub fn prove_pkcs1v15_2048_64_circuit(
-//     params: JsValue,
-//     pk: JsValue,
-//     public_key: JsValue,
-//     msg: JsValue,
-//     signature: JsValue,
-// ) -> JsValue {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-
-//     let pk: Vec<u8> = Uint8Array::new(&pk).to_vec();
-//     let pk = ProvingKey::<G1Affine>::read::<_, Pkcs1v15_2048_64EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&pk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
-//     let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
-//     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
-
-//     let limb_bits = 64;
-//     const bits_len: usize = Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::BITS_LEN;
-//     const msg_len: usize = Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::MSG_LEN;
-//     let num_limbs = bits_len / 64;
-//     // 1. Uniformly sample a RSA key pair.
-//     let mut rng = thread_rng();
-//     let private_key = RsaPrivateKey::new(&mut rng, bits_len).expect("failed to generate a key");
-//     let public_key = RsaPublicKey::from(&private_key);
-//     // 2. Uniformly sample a message.
-//     // 3. Compute the SHA256 hash of `msg`.
-//     let (msg, hashed_msg) = {
-//         let mut msg: [u8; msg_len] = [0; msg_len];
-//         for i in 0..msg_len {
-//             msg[i] = rng.gen();
-//         }
-//         let hashed_msg = Sha256::digest(&msg).to_vec();
-//         (msg.to_vec(), hashed_msg)
-//     };
-
-//     // 4. Generate a pkcs1v15 signature.
-//     let padding = PaddingScheme::PKCS1v15Sign {
-//         hash: Some(Hash::SHA2_256),
-//     };
-//     let mut sign = private_key
-//         .sign(padding, &hashed_msg)
-//         .expect("fail to sign a hashed message.");
-//     sign.reverse();
-//     let sign_big = BigUint::from_bytes_le(&sign);
-//     let signature = RSASignature::new(Value::known(sign_big));
-
-//     // 5. Construct `RSAPublicKey` from `n` of `public_key` and fixed `e`.
-//     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
-//     let e_fix = RSAPubE::Fix(BigUint::from(
-//         Pkcs1v15_2048_64EnabledBenchCircuit::<Fr>::DEFAULT_E,
-//     ));
-//     let public_key = RSAPublicKey::new(Value::known(n_big), e_fix);
-
-//     // 6. Create our circuit!
-//     let circuit = Pkcs1v15_2048_64EnabledBenchCircuit::<Fr> {
-//         signature,
-//         public_key,
-//         msg,
-//         _f: PhantomData,
-//     };
-
-//     let prover = match MockProver::run(13, &circuit, vec![]) {
-//         Ok(prover) => prover,
-//         Err(e) => panic!("{:#?}", e),
-//     };
-//     prover.verify().unwrap();
-
-//     // 7. Generate a proof.
-//     let proof = {
-//         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-//         create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
-//             &params,
-//             &pk,
-//             &[circuit],
-//             &[&[]],
-//             OsRng,
-//             &mut transcript,
-//         )
-//         .unwrap();
-//         transcript.finalize()
-//     };
-//     serde_wasm_bindgen::to_value(&proof).unwrap()
-// }
-
-// #[wasm_bindgen]
-// pub fn verify_pkcs1v15_2048_64_circuit(params: JsValue, vk: JsValue, proof: JsValue) -> bool {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-//     let vk: Vec<u8> = Uint8Array::new(&vk).to_vec();
-//     let vk = VerifyingKey::<G1Affine>::read::<_, Pkcs1v15_2048_64EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&vk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let strategy = SingleStrategy::new(&params);
-//     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
-//     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-//     verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[&[]]], &mut transcript)
-//         .expect("proof invalid");
-//     true
-// }
-
-// #[wasm_bindgen]
-// pub fn prove_pkcs1v15_2048_1024_circuit(
-//     params: JsValue,
-//     pk: JsValue,
-//     public_key: JsValue,
-//     msg: JsValue,
-//     signature: JsValue,
-// ) -> JsValue {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-
-//     let pk: Vec<u8> = Uint8Array::new(&pk).to_vec();
-//     let pk = ProvingKey::<G1Affine>::read::<_, Pkcs1v15_2048_1024EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&pk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
-//     let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
-//     let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
-
-//     let limb_bits = 64;
-//     const bits_len: usize = Pkcs1v15_2048_1024EnabledBenchCircuit::<Fr>::BITS_LEN;
-//     const msg_len: usize = Pkcs1v15_2048_1024EnabledBenchCircuit::<Fr>::MSG_LEN;
-//     let num_limbs = bits_len / 64;
-//     // 1. Uniformly sample a RSA key pair.
-//     let mut rng = thread_rng();
-//     let private_key = RsaPrivateKey::new(&mut rng, bits_len).expect("failed to generate a key");
-//     let public_key = RsaPublicKey::from(&private_key);
-//     // 2. Uniformly sample a message.
-//     // 3. Compute the SHA256 hash of `msg`.
-//     let (msg, hashed_msg) = {
-//         let mut msg: [u8; msg_len] = [0; msg_len];
-//         for i in 0..msg_len {
-//             msg[i] = rng.gen();
-//         }
-//         let hashed_msg = Sha256::digest(&msg).to_vec();
-//         (msg.to_vec(), hashed_msg)
-//     };
-
-//     // 4. Generate a pkcs1v15 signature.
-//     let padding = PaddingScheme::PKCS1v15Sign {
-//         hash: Some(Hash::SHA2_256),
-//     };
-//     let mut sign = private_key
-//         .sign(padding, &hashed_msg)
-//         .expect("fail to sign a hashed message.");
-//     sign.reverse();
-//     let sign_big = BigUint::from_bytes_le(&sign);
-//     let signature = RSASignature::new(Value::known(sign_big));
-
-//     // 5. Construct `RSAPublicKey` from `n` of `public_key` and fixed `e`.
-//     let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
-//     let e_fix = RSAPubE::Fix(BigUint::from(
-//         Pkcs1v15_2048_1024EnabledBenchCircuit::<Fr>::DEFAULT_E,
-//     ));
-//     let public_key = RSAPublicKey::new(Value::known(n_big), e_fix);
-
-//     // 6. Create our circuit!
-//     let circuit = Pkcs1v15_2048_1024EnabledBenchCircuit::<Fr> {
-//         signature,
-//         public_key,
-//         msg,
-//         _f: PhantomData,
-//     };
-
-//     let prover = match MockProver::run(13, &circuit, vec![]) {
-//         Ok(prover) => prover,
-//         Err(e) => panic!("{:#?}", e),
-//     };
-//     prover.verify().unwrap();
-
-//     // 7. Generate a proof.
-//     let proof = {
-//         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
-//         create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
-//             &params,
-//             &pk,
-//             &[circuit],
-//             &[&[]],
-//             OsRng,
-//             &mut transcript,
-//         )
-//         .unwrap();
-//         transcript.finalize()
-//     };
-//     serde_wasm_bindgen::to_value(&proof).unwrap()
-// }
-
-// #[wasm_bindgen]
-// pub fn verify_pkcs1v15_2048_1024_circuit(params: JsValue, vk: JsValue, proof: JsValue) -> bool {
-//     console_error_panic_hook::set_once();
-
-//     let params = Uint8Array::new(&params).to_vec();
-//     let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
-//     let vk: Vec<u8> = Uint8Array::new(&vk).to_vec();
-//     let vk = VerifyingKey::<G1Affine>::read::<_, Pkcs1v15_2048_1024EnabledBenchCircuit<Fr>>(
-//         &mut BufReader::new(&vk[..]),
-//         SerdeFormat::RawBytes,
-//     )
-//     .unwrap();
-
-//     let strategy = SingleStrategy::new(&params);
-//     let proof: Vec<u8> = serde_wasm_bindgen::from_value(proof).unwrap();
-//     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-//     verify_proof::<_, VerifierGWC<_>, _, _, _>(&params, &vk, strategy, &[&[&[]]], &mut transcript)
-//         .expect("proof invalid");
-//     true
-// }

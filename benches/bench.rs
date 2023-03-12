@@ -120,16 +120,16 @@ impl_pkcs1v15_basic_circuit!(
     true
 );
 
-// impl_pkcs1v15_basic_circuit!(
-//     Pkcs1v15_1024_64DisabledBenchConfig,
-//     Pkcs1v15_1024_64DisabledBenchCircuit,
-//     setup_pkcs1v15_1024_64_disabled,
-//     prove_pkcs1v15_1024_64_disabled,
-//     15,
-//     1024,
-//     64,
-//     false
-// );
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_1024DisabledBenchConfig,
+    Pkcs1v15_2048DisabledBenchCircuit,
+    setup_pkcs1v15_2048_1024_disabled,
+    prove_pkcs1v15_2048_1024_disabled,
+    2048,
+    1024,
+    13,
+    false
+);
 
 fn save_params_pk_and_vk(
     params_filename: &str,
@@ -239,20 +239,28 @@ fn bench_pkcs1v15_2048_enabled(c: &mut Criterion) {
     group.finish();
 }
 
-// fn bench_pkcs1v15_1024_disabled(c: &mut Criterion) {
-//     let (params, vk, pk) = setup_pkcs1v15_1024_64_disabled();
-//     let mut group = c.benchmark_group("pkcs1v15, 1024 bit public key, sha2 disabled");
-//     group.sample_size(10);
-//     group.bench_function("message 64 bytes", |b| {
-//         b.iter(|| prove_pkcs1v15_1024_64_disabled(&params, &vk, &pk))
-//     });
-//     group.finish();
-// }
+fn bench_pkcs1v15_2048_disabled(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pkcs1v15, 2048 bit public key, sha2 disabled");
+    group.sample_size(10);
+    let (params, vk, pk) = setup_pkcs1v15_2048_1024_disabled();
+    save_params_pk_and_vk(
+        "benches/params_2048_1024_disable.bin",
+        "benches/2048_1024_disable.pk",
+        "benches/2048_1024_disable.vk",
+        &params,
+        &pk,
+        &vk,
+    );
+    group.bench_function("message 1024 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_2048_1024_disabled(&params, &vk, &pk))
+    });
+    group.finish();
+}
 
 criterion_group!(
     benches,
-    bench_pkcs1v15_1024_enabled,
-    bench_pkcs1v15_2048_enabled,
-    //bench_pkcs1v15_1024_disabled
+    //bench_pkcs1v15_1024_enabled,
+    //bench_pkcs1v15_2048_enabled,
+    bench_pkcs1v15_2048_disabled
 );
 criterion_main!(benches);

@@ -131,7 +131,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 biguint_config.range().load_lookup_table(&mut layouter)?;
                 let mut first_pass = SKIP_FIRST_PASS;
                 layouter.assign_region(
-                    || "random rsa modpow test with 2048 bits public keys",
+                    || "pkcs1v15 signature verification",
                     |region| {
                         if first_pass {
                             first_pass = false;
@@ -144,21 +144,9 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                         let padding = PaddingScheme::PKCS1v15Sign {
                             hash: Some(Hash::SHA2_256),
                         };
-                        // let mut sign = self
-                        //     .private_key
-                        //     .sign(padding, &hashed_msg)
-                        //     .expect("fail to sign a hashed message.");
-                        // sign.reverse();
-                        // let sign_big = BigUint::from_bytes_le(&sign);
                         let sign = config
                             .rsa_config
                             .assign_signature(ctx, self.signature.clone())?;
-                        // let n_big = BigUint::from_radix_le(
-                        //     &self.public_key.n().clone().to_radix_le(16),
-                        //     16,
-                        // )
-                        // .unwrap();
-                        // let e_fix = RSAPubE::Fix(BigUint::from(Self::DEFAULT_E));
                         let public_key = config
                             .rsa_config
                             .assign_public_key(ctx, self.public_key.clone())?;
@@ -178,10 +166,12 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                                 .assert_is_const(ctx, &is_valid, F::one());
                         } else {
                             let gate = config.rsa_config.gate();
-                            let hash_u64s = self.msg.chunks(limb_bits).map(|limbs| {
+                            let mut msg = self.msg.clone();
+                            msg.reverse();
+                            let hash_u64s = msg.chunks(limb_bits / 8).map(|limbs| {
                                 let mut sum = 0u64;
                                 for (i, limb) in limbs.into_iter().enumerate() {
-                                    sum += (*limb as u64) * (8u64 * i as u64);
+                                    sum += (*limb as u64) << (8 * i);
                                 }
                                 F::from(sum)
                             });
