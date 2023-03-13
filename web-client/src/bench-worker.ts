@@ -20,31 +20,38 @@ export async function fetch_vk() {
     return vk;
 }
 
-async function bench(multiThread: typeof import("halo2-rsa"), bits_len: number, msg: Uint8Array, times: number) {
-    const privateKey = multiThread.sample_rsa_private_key(bits_len);
-    const publicKey = multiThread.generate_rsa_public_key(privateKey);
-    const signature = multiThread.sign(privateKey, msg);
-    const indexes = [];
-    const benches = [];
-    const params = await fetch_params();
-    const pk = await fetch_pk();
-    const vk = await fetch_vk();
-    console.log("init");
-    for (let i = 0; i < times; i++) {
-        indexes.push(i);
-        const start = performance.now();
-        const proof = multiThread.prove_pkcs1v15_1024_1024_circuit(params, pk, publicKey, msg, signature);
-        const sub = performance.now() - start;
-        console.log(`index: ${i}, bench: ${sub} ms`);
-        benches.push(sub);
-        const isValid = multiThread.verify_pkcs1v15_1024_1024_circuit(params, vk, proof);
-        console.log(isValid)
-    }
-    return proxy({
-        indexes: indexes,
-        benches: benches
-    })
-}
+// async function bench(multiThread: typeof import("halo2-rsa"), bits_len: number, msg: Uint8Array, times: number) {
+//     const privateKey = multiThread.sample_rsa_private_key(bits_len);
+//     const publicKey = multiThread.generate_rsa_public_key(privateKey);
+//     const signature = multiThread.sign(privateKey, msg);
+//     const indexes = [];
+//     const benches: number[] = [];
+//     const params = await fetch_params();
+//     const pk = await fetch_pk();
+//     const vk = await fetch_vk();
+//     console.log("init");
+//     for (let i = 0; i < times; i++) {
+//         indexes.push(i);
+//         const multiThread = await import(
+//             'halo2-rsa'
+//         );
+//         const initOutput = await multiThread.default();
+//         const builder = await multiThread.initThreadPool(navigator.hardwareConcurrency);
+//         console.log(builder);
+//         const start = performance.now();
+//         const proof = multiThread.prove_pkcs1v15_2048_1024_circuit(params, pk, publicKey, msg, signature);
+//         const sub = performance.now() - start;
+//         console.log(`index: ${i}, bench: ${sub} ms`);
+//         benches.push(sub);
+//         const isValid = multiThread.verify_pkcs1v15_2048_1024_circuit(params, vk, proof);
+//         console.log(isValid);
+//         // initOutput.__wbg_wbg_rayon_poolbuilder_free(navigator.hardwareConcurrency);
+//     }
+//     return proxy({
+//         indexes: indexes,
+//         benches: benches
+//     })
+// }
 
 async function initHandlers(bits_len: number, msg: Uint8Array, times: number) {
     const multiThread = await import(
@@ -53,7 +60,17 @@ async function initHandlers(bits_len: number, msg: Uint8Array, times: number) {
     await multiThread.default();
     console.log(`hardware: ${navigator.hardwareConcurrency}`);
     await multiThread.initThreadPool(navigator.hardwareConcurrency);
-    return await bench(multiThread, bits_len, msg, times);
+    const params = await fetch_params();
+    const pk = await fetch_pk();
+    const vk = await fetch_vk();
+    const privateKey = multiThread.sample_rsa_private_key(bits_len);
+    const publicKey = multiThread.generate_rsa_public_key(privateKey);
+    const signature = multiThread.sign(privateKey, msg);
+    const results = multiThread.multi_bench_2048_1024_circuit(params, pk, vk, publicKey, msg, signature, times);
+    return proxy({
+        avg: results[0],
+        sdv: results[1]
+    })
 }
 
 // async function sample_rsa_private_key(bits_len: number): Promise<any> {

@@ -49,13 +49,16 @@ use rand::{thread_rng, Rng};
 use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
 
-use js_sys::{JsString, Uint8Array};
+use js_sys::{Array, JsString, Uint8Array};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use wasm_bindgen::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
+use web_sys::console::*;
 
 impl_pkcs1v15_basic_circuit!(
     Pkcs1v15_1024_64EnabledBenchConfig,
@@ -195,23 +198,18 @@ macro_rules! impl_pkcs1v15_wasm_functions {
             )
             .unwrap();
 
-            let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
-            let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
             let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
-
-            let limb_bits = 64;
-            const bits_len: usize = $circuit_name::<Fr>::BITS_LEN;
-            const msg_len: usize = $circuit_name::<Fr>::MSG_LEN;
-            let num_limbs = bits_len / 64;
-
-            signature.reverse();
-            let sign_big = BigUint::from_bytes_le(&signature);
-            let signature = RSASignature::new(Value::known(sign_big));
-
             let n_big =
                 BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16).unwrap();
             let e_fix = RSAPubE::Fix(BigUint::from($circuit_name::<Fr>::DEFAULT_E));
             let public_key = RSAPublicKey::new(Value::known(n_big), e_fix);
+
+            let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
+            let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
+
+            signature.reverse();
+            let sign_big = BigUint::from_bytes_le(&signature);
+            let signature = RSASignature::new(Value::known(sign_big));
 
             let circuit = $circuit_name::<Fr> {
                 signature,
@@ -332,4 +330,121 @@ impl_pkcs1v15_wasm_functions!(
     1024,
     13,
     false
+);
+
+#[macro_export]
+macro_rules! impl_pkcs1v15_wasm_multi_exec_bench {
+    ($circuit_name:ident, $k:expr, $multi_bench_fn_name:ident) => {
+        #[wasm_bindgen]
+        pub fn $multi_bench_fn_name(
+            params: JsValue,
+            pk: JsValue,
+            vk: JsValue,
+            public_key: JsValue,
+            msg: JsValue,
+            signature: JsValue,
+            times: usize,
+        ) -> Array {
+            let params = Uint8Array::new(&params).to_vec();
+            let params = ParamsKZG::<Bn256>::read(&mut BufReader::new(&params[..])).unwrap();
+            let pk = Uint8Array::new(&pk).to_vec();
+            let pk = ProvingKey::<G1Affine>::read::<_, $circuit_name<Fr>>(
+                &mut BufReader::new(&pk[..]),
+                SerdeFormat::RawBytes,
+            )
+            .unwrap();
+            let vk = Uint8Array::new(&vk).to_vec();
+            let vk = VerifyingKey::<G1Affine>::read::<_, $circuit_name<Fr>>(
+                &mut BufReader::new(&vk[..]),
+                SerdeFormat::RawBytes,
+            )
+            .unwrap();
+            let public_key: RsaPublicKey = serde_wasm_bindgen::from_value(public_key).unwrap();
+            let msg: Vec<u8> = Uint8Array::new(&msg).to_vec();
+            let mut signature: Vec<u8> = serde_wasm_bindgen::from_value(signature).unwrap();
+            signature.reverse();
+
+            let (sum, square_sum) = (0..times)
+                .into_par_iter()
+                .map(|i| {
+                    let window = web_sys::window().expect("should have a window in this context");
+                    let performance = window
+                        .performance()
+                        .expect("performance should be available");
+                    let n_big = BigUint::from_radix_le(&public_key.n().clone().to_radix_le(16), 16)
+                        .unwrap();
+                    let e_fix = RSAPubE::Fix(BigUint::from($circuit_name::<Fr>::DEFAULT_E));
+                    let public_key = RSAPublicKey::new(Value::known(n_big), e_fix);
+                    let msg = msg.to_vec();
+                    let sign_big = BigUint::from_bytes_le(&signature);
+                    let signature = RSASignature::new(Value::known(sign_big));
+
+                    let circuit = $circuit_name::<Fr> {
+                        signature,
+                        public_key,
+                        msg,
+                        _f: PhantomData,
+                    };
+
+                    let prover = match MockProver::run($k, &circuit, vec![]) {
+                        Ok(prover) => prover,
+                        Err(e) => panic!("{:#?}", e),
+                    };
+                    prover.verify().unwrap();
+
+                    // log_2(&"start proof generation at".into(), &i.into());
+                    let start = performance.timing().request_start();
+                    let proof = {
+                        let mut transcript =
+                            Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+                        create_proof::<KZGCommitmentScheme<_>, ProverGWC<_>, _, _, _, _>(
+                            &params,
+                            &pk,
+                            &[circuit],
+                            &[&[]],
+                            OsRng,
+                            &mut transcript,
+                        )
+                        .unwrap();
+                        transcript.finalize()
+                    };
+                    let end = performance.timing().response_end();
+                    // let strategy = SingleStrategy::new(&params);
+                    // let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+                    // verify_proof::<_, VerifierGWC<_>, _, _, _>(
+                    //     &params,
+                    //     &vk,
+                    //     strategy,
+                    //     &[&[]],
+                    //     &mut transcript,
+                    // )
+                    // .expect("proof invalid");
+                    let sub = end - start;
+                    // log_3(&"proof generation result ".into(), &i.into(), &sub.into());
+                    (sub, sub * sub)
+                })
+                .reduce(
+                    || (0.0f64, 0.0f64),
+                    |results: (f64, f64), subs: (f64, f64)| {
+                        (results.0 + subs.0, results.1 + subs.1)
+                    },
+                );
+            let times = times as f64;
+            let avg = sum / times;
+            let square_avg = square_sum / times;
+            let var = square_avg * square_avg - avg * avg;
+            let sdv = var.sqrt();
+            // let result = [JsValue::from_f64(avg), JsValue::from_f64(sdv)];
+            let array = Array::new();
+            array.set(0, JsValue::from_f64(avg));
+            array.set(1, JsValue::from_f64(sdv));
+            array
+        }
+    };
+}
+
+impl_pkcs1v15_wasm_multi_exec_bench!(
+    Pkcs1v15_2048_1024EnabledBenchCircuit,
+    13,
+    multi_bench_2048_1024_circuit
 );

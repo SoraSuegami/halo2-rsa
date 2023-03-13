@@ -65,12 +65,12 @@ async function sha256_msg(msg: any): Promise<any> {
 }
 
 async function prove_1024_64(
+  params: any,
   pk: any,
   public_key: any,
   msg: any,
   signature: any
 ): Promise<any> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -81,10 +81,10 @@ async function prove_1024_64(
 }
 
 async function verify_1024_64(
+  params: any,
   vk: any,
   proof: any
 ): Promise<boolean> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -96,12 +96,12 @@ async function verify_1024_64(
 
 
 async function prove_1024_1024(
+  params: any,
   pk: any,
   public_key: any,
   msg: any,
   signature: any
 ): Promise<any> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -112,10 +112,10 @@ async function prove_1024_1024(
 }
 
 async function verify_1024_1024(
+  params: any,
   vk: any,
   proof: any
 ): Promise<boolean> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -126,12 +126,12 @@ async function verify_1024_1024(
 }
 
 async function prove_2048_64(
+  params: any,
   pk: any,
   public_key: any,
   msg: any,
   signature: any
 ): Promise<any> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -142,10 +142,10 @@ async function prove_2048_64(
 }
 
 async function verify_2048_64(
+  params: any,
   vk: any,
   proof: any
 ): Promise<boolean> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -156,12 +156,12 @@ async function verify_2048_64(
 }
 
 async function prove_2048_1024(
+  params: any,
   pk: any,
   public_key: any,
   msg: any,
   signature: any
 ): Promise<any> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
@@ -172,10 +172,10 @@ async function prove_2048_1024(
 }
 
 async function verify_2048_1024(
+  params: any,
   vk: any,
   proof: any
 ): Promise<boolean> {
-  const params = await fetch_params();
   const multiThread = await import(
     'halo2-rsa'
   );
