@@ -30,7 +30,7 @@ use halo2_base::{
     utils::{bigint_to_fe, biguint_to_fe, fe_to_biguint, modulus, PrimeField},
     AssignedValue, Context,
 };
-use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicConfig};
+use halo2_dynamic_sha256::{Field, Sha256CompressionConfig, Sha256DynamicConfig};
 use halo2_ecc::bigint::{
     big_is_equal, big_is_zero, big_less_than, carry_mod, mul_no_carry, negative, select, sub,
     CRTInteger, FixedCRTInteger, FixedOverflowInteger, OverflowInteger,
@@ -61,6 +61,7 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_1024_64_enabled,
     1024,
     64,
+    1,
     13,
     true
 );
@@ -72,6 +73,7 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_1024_128_enabled,
     1024,
     128,
+    1,
     13,
     true
 );
@@ -83,6 +85,7 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_1024_1024_enabled,
     1024,
     1024,
+    1,
     13,
     true
 );
@@ -94,6 +97,7 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_2048_64_enabled,
     2048,
     64,
+    1,
     13,
     true
 );
@@ -105,6 +109,7 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_2048_128_enabled,
     2048,
     128,
+    1,
     13,
     true
 );
@@ -116,6 +121,19 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_2048_1024_enabled,
     2048,
     1024,
+    1,
+    13,
+    true
+);
+
+impl_pkcs1v15_basic_circuit!(
+    Pkcs1v15_2048_3072EnabledBenchConfig,
+    Pkcs1v15_2048_30720EnabledBenchCircuit,
+    setup_pkcs1v15_2048_10240_enabled,
+    prove_pkcs1v15_2048_10240_enabled,
+    2048,
+    10240,
+    10,
     13,
     true
 );
@@ -127,6 +145,7 @@ impl_pkcs1v15_basic_circuit!(
     prove_pkcs1v15_2048_1024_disabled,
     2048,
     1024,
+    1,
     13,
     false
 );
@@ -236,6 +255,18 @@ fn bench_pkcs1v15_2048_enabled(c: &mut Criterion) {
     group.bench_function("message 1024 bytes", |b| {
         b.iter(|| prove_pkcs1v15_2048_1024_enabled(&params, &vk, &pk))
     });
+    let (params, vk, pk) = setup_pkcs1v15_2048_10240_enabled();
+    save_params_pk_and_vk(
+        "benches/params_2048_10240.bin",
+        "benches/2048_10240.pk",
+        "benches/2048_10240.vk",
+        &params,
+        &pk,
+        &vk,
+    );
+    group.bench_function("message 10240 bytes", |b| {
+        b.iter(|| prove_pkcs1v15_2048_10240_enabled(&params, &vk, &pk))
+    });
     group.finish();
 }
 
@@ -259,8 +290,8 @@ fn bench_pkcs1v15_2048_disabled(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    //bench_pkcs1v15_1024_enabled,
-    //bench_pkcs1v15_2048_enabled,
-    bench_pkcs1v15_2048_disabled
+    bench_pkcs1v15_1024_enabled,
+    // bench_pkcs1v15_2048_enabled,
+    // bench_pkcs1v15_2048_disabled
 );
 criterion_main!(benches);

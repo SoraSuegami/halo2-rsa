@@ -19,7 +19,7 @@ use halo2_base::{
     utils::{bigint_to_fe, biguint_to_fe, fe_to_biguint, modulus, PrimeField},
     AssignedValue, Context,
 };
-use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicConfig};
+use halo2_dynamic_sha256::{Field, Sha256CompressionConfig, Sha256DynamicConfig};
 use halo2_ecc::bigint::{
     big_is_equal, big_is_zero, big_less_than, carry_mod, mul_no_carry, negative, select, sub,
     CRTInteger, FixedCRTInteger, FixedOverflowInteger, OverflowInteger,
@@ -35,7 +35,7 @@ use sha2::{Digest, Sha256};
 
 #[macro_export]
 macro_rules! impl_pkcs1v15_basic_circuit {
-    ($config_name:ident, $circuit_name:ident, $setup_fn_name:ident, $prove_fn_name:ident, $bits_len:expr, $msg_len:expr, $k:expr, $sha2_chip_enabled:expr) => {
+    ($config_name:ident, $circuit_name:ident, $setup_fn_name:ident, $prove_fn_name:ident, $bits_len:expr, $msg_len:expr, $num_sha2_comp:expr, $k:expr, $sha2_chip_enabled:expr) => {
         #[derive(Debug, Clone)]
         struct $config_name<F: Field> {
             rsa_config: RSAConfig<F>,
@@ -55,10 +55,11 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             const LIMB_WIDTH: usize = 64;
             const EXP_LIMB_BITS: usize = 5;
             const DEFAULT_E: u128 = 65537;
-            const NUM_ADVICE: usize = 50;
+            const NUM_ADVICE: usize = 80;
             const NUM_FIXED: usize = 1;
-            const NUM_LOOKUP_ADVICE: usize = 4;
+            const NUM_LOOKUP_ADVICE: usize = 8;
             const LOOKUP_BITS: usize = 12;
+            const NUM_SHA2_COMP: usize = $num_sha2_comp;
         }
 
         impl<F: Field> Default for $circuit_name<F> {
@@ -67,7 +68,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 let signature = RSASignature::without_witness();
                 let public_key = RSAPublicKey::without_witness(BigUint::from(Self::DEFAULT_E));
                 let msg = if $sha2_chip_enabled {
-                    vec![0; $msg_len]
+                    vec![0; $msg_len - 9]
                 } else {
                     vec![0; 32]
                 };
@@ -103,10 +104,12 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 let rsa_config =
                     RSAConfig::construct(bigint_config, Self::BITS_LEN, Self::EXP_LIMB_BITS);
                 let sha256_config = if $sha2_chip_enabled {
-                    let sha256_bit_config = Sha256BitConfig::configure(meta);
+                    let sha256_bit_configs = (0..Self::NUM_SHA2_COMP)
+                        .map(|_| Sha256CompressionConfig::configure(meta))
+                        .collect();
                     Some(Sha256DynamicConfig::construct(
-                        sha256_bit_config,
-                        Self::MSG_LEN + 64,
+                        sha256_bit_configs,
+                        Self::MSG_LEN,
                         range_config,
                     ))
                 } else {
@@ -231,8 +234,8 @@ macro_rules! impl_pkcs1v15_basic_circuit {
             // 2. Uniformly sample a message.
             // 3. Compute the SHA256 hash of `msg`.
             let (msg, hashed_msg) = if $sha2_chip_enabled {
-                let mut msg: [u8; $msg_len] = [0; $msg_len];
-                for i in 0..$msg_len {
+                let mut msg: [u8; $msg_len - 9] = [0; $msg_len - 9];
+                for i in 0..($msg_len - 9) {
                     msg[i] = rng.gen();
                 }
                 let hashed_msg = Sha256::digest(&msg).to_vec();

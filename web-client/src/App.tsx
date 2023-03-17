@@ -46,18 +46,20 @@ function App() {
     console.log("bench start");
     let msg = new Uint8Array(new Array(32).fill(0));
     console.log(msg);
-    const results = await workerApi.initHandlers(2048, msg, 2);
-    // const graph = document.getElementById('graph');
-    const avg = await results.avg;
-    const sdv = await results.sdv;
-    // Plotly.newPlot(graph, [{
-    //   x: indexes,
-    //   y: benches,
-    // }], {
-    //   margin: { t: 0 }
-    // });
-    console.log(`proving time average: ${avg} ms.`);
-    console.log(`proving time variance: ${sdv} ms.`);
+    const results = await workerApi.initHandlers(2048, msg, 100);
+    const graph = document.getElementById('graph');
+    // const avg = await results.avg;
+    // const sdv = await results.sdv;
+    const indexes = await results.indexes;
+    const benches = await results.benches;
+    Plotly.newPlot(graph, [{
+      x: indexes,
+      y: benches,
+    }], {
+      margin: { t: 0 }
+    });
+    console.log(`proving time average: ${mean(benches)} ms.`);
+    console.log(`proving time variance: ${sampleVariance(benches)} ms.`);
     // try {
     //   const params = await workerApi.fetch_params();
     //   const pk = await workerApi.fetch_pk();

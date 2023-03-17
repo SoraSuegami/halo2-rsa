@@ -32,7 +32,9 @@ pub use chip::*;
 pub use instructions::*;
 mod macros;
 pub use halo2_dynamic_sha256;
-use halo2_dynamic_sha256::{Field, Sha256BitConfig, Sha256DynamicConfig};
+use halo2_dynamic_sha256::{
+    AssignedHashResult, Field, Sha256CompressionConfig, Sha256DynamicConfig,
+};
 pub use macros::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -209,7 +211,8 @@ impl<F: Field> RSASignatureVerifier<F> {
         let sha256 = self.sha256_config.clone();
         let rsa = self.rsa_config.clone();
         let biguint = &rsa.biguint_config();
-        let (_, _, mut hashed_bytes) = sha256.digest(ctx, msg)?;
+        let result = sha256.digest(ctx, msg)?;
+        let mut hashed_bytes = result.output_bytes;
         hashed_bytes.reverse();
         let bytes_bits = hashed_bytes.len() * 8;
         let limb_bits = biguint.limb_bits();
@@ -280,6 +283,7 @@ mod test {
                 const NUM_FIXED:usize = 1;
                 const NUM_LOOKUP_ADVICE:usize = $num_lookup_advice;
                 const LOOKUP_BITS:usize = $lookup_bits;
+                const NUM_SHA2_COMP:usize = 1;
             }
 
             impl<F: Field> Circuit<F> for $circuit_name<F> {
@@ -294,8 +298,10 @@ mod test {
                     let range_config = RangeConfig::configure(meta,Vertical, &[Self::NUM_ADVICE], &[Self::NUM_LOOKUP_ADVICE], Self::NUM_FIXED, Self::LOOKUP_BITS, 0, $k);
                     let bigint_config = BigUintConfig::construct(range_config.clone(), 64);
                     let rsa_config = RSAConfig::construct(bigint_config, Self::BITS_LEN, Self::EXP_LIMB_BITS);
-                    let sha256_bit_config = Sha256BitConfig::configure(meta);
-                    let sha256_config = Sha256DynamicConfig::construct(sha256_bit_config, Self::MSG_LEN, range_config);
+                    let sha256_bit_configs = (0..Self::NUM_SHA2_COMP)
+                        .map(|_| Sha256CompressionConfig::configure(meta))
+                        .collect();
+                    let sha256_config = Sha256DynamicConfig::construct(sha256_bit_configs, Self::MSG_LEN, range_config);
                     let n_instance = meta.instance_column();
                     let hash_instance = meta.instance_column();
                     meta.enable_equality(n_instance);
