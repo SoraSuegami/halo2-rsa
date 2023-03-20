@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # halo2wrong = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
 # maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_01_20" }
-halo2-dynamic-sha256 = { git = "https://github.com/SoraSuegami/halo2-dynamic-sha256.git", version = "0.1.0", branch = "feat/many_chips" }
+halo2-dynamic-sha256 = { git = "https://github.com/zkemail/halo2-dynamic-sha256.git", version = "0.1.0", branch = "main" }
 num-bigint = { version = "0.4", features = ["rand"] }
 sha2 = "0.10.6"
 rand = "0.8.5"
