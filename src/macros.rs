@@ -29,6 +29,7 @@ use num_traits::{One, Signed, Zero};
 use rand::rngs::OsRng;
 use std::marker::PhantomData;
 
+use halo2_base::halo2_proofs::poly::kzg::strategy::SingleStrategy;
 use rand::{thread_rng, Rng};
 use rsa::{Hash, PaddingScheme, PublicKeyParts, RsaPrivateKey, RsaPublicKey};
 use sha2::{Digest, Sha256};
@@ -295,18 +296,20 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                 transcript.finalize()
             };
             // // 9. Verify the proof.
-            // {
-            //     let strategy = SingleStrategy::new(&params);
-            //     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-            //     assert!(verify_proof::<_, VerifierGWC<_>, _, _, _>(
-            //         params,
-            //         vk,
-            //         strategy,
-            //         &[&[&[]]],
-            //         &mut transcript
-            //     )
-            //     .is_ok());
-            // }
+            {
+                let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
+                let verifier_params = params.verifier_params();
+                let strategy = SingleStrategy::new(&verifier_params);
+                // let strategy = AccumulatorStrategy::new(verifier_params);
+                verify_proof::<_, VerifierGWC<_>, _, _, _>(
+                    verifier_params,
+                    vk,
+                    strategy,
+                    &[&[]],
+                    &mut transcript,
+                )
+                .unwrap();
+            }
         }
     };
 }

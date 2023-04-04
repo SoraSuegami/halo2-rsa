@@ -1,18 +1,19 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use halo2_base::halo2_proofs::poly::kzg::strategy::{AccumulatorStrategy, SingleStrategy};
 use halo2_base::halo2_proofs::{
     circuit::{Cell, Layouter, Region, SimpleFloorPlanner, Value},
     dev::MockProver,
     halo2curves::bn256::{Bn256, Fr, G1Affine},
     plonk::Error,
     plonk::{
-        create_proof, keygen_pk, keygen_vk, Circuit, Column, ConstraintSystem, Instance,
-        ProvingKey, VerifyingKey,
+        create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, Column, ConstraintSystem,
+        Instance, ProvingKey, VerifyingKey,
     },
     poly::{
         commitment::{Params, ParamsProver},
         kzg::{
             commitment::{KZGCommitmentScheme, ParamsKZG},
-            multiopen::ProverGWC,
+            multiopen::{ProverGWC, VerifierGWC},
         },
         Rotation,
     },
