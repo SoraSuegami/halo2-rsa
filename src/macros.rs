@@ -110,7 +110,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                         .collect();
                     Some(Sha256DynamicConfig::construct(
                         sha256_bit_configs,
-                        Self::MSG_LEN,
+                        vec![Self::MSG_LEN],
                         range_config,
                     ))
                 } else {
@@ -155,7 +155,7 @@ macro_rules! impl_pkcs1v15_basic_circuit {
                             .rsa_config
                             .assign_public_key(ctx, self.public_key.clone())?;
                         if $sha2_chip_enabled {
-                            let verifier = RSASignatureVerifier::new(
+                            let mut verifier = RSASignatureVerifier::new(
                                 config.rsa_config.clone(),
                                 config.sha256_config.clone().unwrap(),
                             );

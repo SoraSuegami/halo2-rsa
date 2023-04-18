@@ -201,14 +201,14 @@ impl<F: Field> RSASignatureVerifier<F> {
     /// If `signature` is valid for `public_key` and `msg`, the bit is equivalent to one.
     /// Otherwise, the bit is equivalent to zero.
     pub fn verify_pkcs1v15_signature<'a, 'b: 'a>(
-        &'a self,
+        &'a mut self,
         // mut layouter: impl Layouter<F>,
         ctx: &mut Context<'b, F>,
         public_key: &AssignedRSAPublicKey<'b, F>,
         msg: &'a [u8],
         signature: &AssignedRSASignature<'b, F>,
     ) -> Result<(AssignedValue<'b, F>, Vec<AssignedValue<'b, F>>), Error> {
-        let sha256 = self.sha256_config.clone();
+        let sha256 = &mut self.sha256_config;
         let rsa = self.rsa_config.clone();
         let biguint = &rsa.biguint_config();
         let result = sha256.digest(ctx, msg)?;
@@ -301,7 +301,7 @@ mod test {
                     let sha256_bit_configs = (0..Self::NUM_SHA2_COMP)
                         .map(|_| Sha256CompressionConfig::configure(meta))
                         .collect();
-                    let sha256_config = Sha256DynamicConfig::construct(sha256_bit_configs, Self::MSG_LEN, range_config);
+                    let sha256_config = Sha256DynamicConfig::construct(sha256_bit_configs, vec![Self::MSG_LEN], range_config);
                     let n_instance = meta.instance_column();
                     let hash_instance = meta.instance_column();
                     meta.enable_equality(n_instance);
@@ -407,7 +407,7 @@ mod test {
                     let public_key = config
                         .rsa_config
                         .assign_public_key(ctx, RSAPublicKey::new(Value::known(n_big), e_fix))?;
-                    let verifier = RSASignatureVerifier::new(
+                    let mut verifier = RSASignatureVerifier::new(
                         config.rsa_config.clone(),
                         config.sha256_config.clone(),
                     );
@@ -496,7 +496,7 @@ mod test {
                     let public_key = config
                         .rsa_config
                         .assign_public_key(ctx, RSAPublicKey::new(Value::known(n_big), e_fix))?;
-                    let verifier = RSASignatureVerifier::new(
+                    let mut verifier = RSASignatureVerifier::new(
                         config.rsa_config.clone(),
                         config.sha256_config.clone(),
                     );
@@ -586,7 +586,7 @@ mod test {
                     let public_key = config
                         .rsa_config
                         .assign_public_key(ctx, RSAPublicKey::new(Value::known(n_big), e_fix))?;
-                    let verifier = RSASignatureVerifier::new(
+                    let mut verifier = RSASignatureVerifier::new(
                         config.rsa_config.clone(),
                         config.sha256_config.clone(),
                     );
